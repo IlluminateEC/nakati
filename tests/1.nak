@@ -1,0 +1,19 @@
+import Out from "@nakati/io";
+// import Example from "@naki.dev/example";
+// pub static example: Example = Example.new();
+
+pub static example: u8 = 1;
+
+pub class Main {
+//     pub fn two(): u8 = 1 + 1;
+// 
+//     pub fn main(args: {String}): () = {
+//         Out.println(In.readAs[i8]().unwrap());
+// 
+//         args.forEach((name) => {
+//             Out.println("Hello, {}", name);
+//         });
+// 
+//         // Out.println("Hello, {}", args.get(0));
+//     };
+}

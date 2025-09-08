@@ -1,0 +1,8 @@
+[package]
+name = "nakati"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+emojis = "0.7.2"
+unicode-segmentation = "1.12.0"
