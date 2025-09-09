@@ -1,3 +1,3 @@
 # Authors
-- Kazani.dev
-- Naki.dev
+Ohin Taylor (https://kazani.dev)
+Davy Liu (https://naki.dev)
