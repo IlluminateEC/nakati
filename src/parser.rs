@@ -1,8 +1,10 @@
 use std::fmt::Debug;
 
 use crate::{
-    common::{Ast, OptionalResult, Token, TokenKind},
+    ast::{Ast, AstNode},
+    common::OptionalResult,
     lexer::{LexError, Lexer},
+    token::{Token, TokenKind},
 };
 
 #[derive(Clone)]
@@ -89,7 +91,7 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Ast, ParseError> {
+    pub fn parse(&mut self) -> Result<AstNode, ParseError> {
         self.program()
     }
 }
@@ -101,7 +103,7 @@ impl Parser {
         self.next = self.lexer.next_token();
     }
 
-    fn is(&self, kind: TokenKind, content: Option<&dyn AsRef<str>>) -> Result<bool, ParseError> {
+    fn is(&self, kind: TokenKind, content: Option<&str>) -> Result<bool, ParseError> {
         if self.current.is_none() {
             return Ok(false);
         }
@@ -117,18 +119,14 @@ impl Parser {
             .is_and_has_content(kind, content))
     }
 
-    fn next_is(&self, kind: TokenKind, content: Option<&dyn AsRef<str>>) -> bool {
+    fn next_is(&self, kind: TokenKind, content: Option<&str>) -> bool {
         match &self.next {
             OptionalResult::Ok(v) => v.is_and_has_content(kind, content),
             _ => false,
         }
     }
 
-    fn accept(
-        &mut self,
-        kind: TokenKind,
-        content: Option<&dyn AsRef<str>>,
-    ) -> Result<bool, ParseError> {
+    fn accept(&mut self, kind: TokenKind, content: Option<&str>) -> Result<bool, ParseError> {
         if self.current.is_none() {
             return Ok(false);
         }
@@ -141,7 +139,7 @@ impl Parser {
 
         if current.kind == kind {
             if let Some(content) = content {
-                if current.span.content() == content.as_ref() {
+                if current.span.content() == content {
                     self.nom();
                     return Ok(true);
                 }
@@ -159,7 +157,7 @@ impl Parser {
     fn accept_option(
         &mut self,
         kind: TokenKind,
-        content: Option<&dyn AsRef<str>>,
+        content: Option<&str>,
     ) -> Result<Option<Token>, ParseError> {
         if self.is(kind, content)? {
             let return_ = Ok(Some(self.current.clone().unwrap()));
@@ -170,22 +168,113 @@ impl Parser {
         }
     }
 
-    fn expect(
-        &mut self,
-        kind: TokenKind,
-        content: Option<&dyn AsRef<str>>,
-    ) -> Result<Token, ParseError> {
+    fn expect(&mut self, kind: TokenKind, content: Option<&str>) -> Result<Token, ParseError> {
         let current = self.current.clone();
 
-        if self.accept(kind.clone(), content)? {
+        if self.accept(kind, content)? {
             return Ok(current.unwrap());
         }
 
         Err(ParseError::ExpectedTokenGot(
-            vec![(kind, content.map(|s| s.as_ref().to_string()))],
+            vec![(kind, content.map(|s| s.to_string()))],
             current.clone().as_option(),
         ))
     }
+
+    // TODO: make it return a closure that takes an argument
+    #[inline]
+    fn branch(&mut self, branches: &[FinishedBranch]) -> ParseResult<AstNode> {
+        for FinishedBranch {
+            kind,
+            content,
+            predicate,
+            handler,
+            consume,
+        } in branches
+        {
+            if self.is(*kind, *content)? && predicate.map(|f| f(self)).unwrap_or(true) {
+                if *consume {
+                    self.nom();
+                }
+
+                return handler(self);
+            }
+        }
+
+        Err(ParseError::ExpectedTokenGot(
+            branches
+                .iter()
+                .map(|branch| {
+                    (
+                        branch.kind.to_owned(),
+                        branch.content.map(|s| s.to_string()),
+                    )
+                })
+                .collect(),
+            self.current.clone().as_option(),
+        ))
+    }
+}
+
+type ParseResult<T> = Result<T, ParseError>;
+// type TokenContent = &'static dyn AsRef<str>;
+type Predicate<'a> = &'a dyn Fn(&mut Parser) -> bool;
+type Handler<'a> = &'a dyn Fn(&mut Parser) -> ParseResult<AstNode>;
+
+struct Branch<'a> {
+    kind: TokenKind,
+    content: Option<&'static str>,
+    predicate: Option<Predicate<'a>>,
+    consume: bool,
+}
+
+impl<'a> Branch<'a> {
+    #[inline]
+    pub fn of_kind(kind: TokenKind) -> Self {
+        Self {
+            kind,
+            content: None,
+            predicate: None,
+            consume: false,
+        }
+    }
+
+    #[inline]
+    pub fn with_content(mut self, content: &'static str) -> Self {
+        self.content = Some(content);
+        self
+    }
+
+    #[inline]
+    pub fn when(mut self, predicate: Predicate<'a>) -> Self {
+        self.predicate = Some(predicate);
+        self
+    }
+
+    #[inline]
+    pub fn consume(mut self) -> Self {
+        self.consume = !self.consume;
+        self
+    }
+
+    #[inline]
+    pub fn then(self, handler: Handler<'a>) -> FinishedBranch<'a> {
+        FinishedBranch {
+            kind: self.kind,
+            content: self.content,
+            predicate: self.predicate,
+            consume: self.consume,
+            handler,
+        }
+    }
+}
+
+struct FinishedBranch<'a> {
+    kind: TokenKind,
+    content: Option<&'static str>,
+    predicate: Option<Predicate<'a>>,
+    consume: bool,
+    handler: Handler<'a>,
 }
 
 impl Parser {
@@ -209,7 +298,9 @@ impl Parser {
         Ok((name, alias))
     }
 
-    fn import_statement(&mut self) -> Result<Ast, ParseError> {
+    fn import_statement(&mut self) -> Result<AstNode, ParseError> {
+        self.expect(TokenKind::Identifier, Some("import"))?;
+
         let mut names = vec![];
 
         names.push(self.import_name()?);
@@ -224,22 +315,22 @@ impl Parser {
 
         self.expect(TokenKind::Semicolon, None)?;
 
-        Ok(Ast::Import {
+        Ok(AstNode::new(Ast::Import {
             names,
             module: module.span.content().to_string(),
-        })
+        }))
     }
 
-    fn type_(&mut self) -> Result<Ast, ParseError> {
+    fn type_(&mut self) -> Result<AstNode, ParseError> {
         // TODO: actual parsing of types
         // generics
 
         let name = self.expect(TokenKind::Identifier, None)?;
 
-        Ok(Ast::TypeName(name.span.content().to_string()))
+        Ok(AstNode::new(Ast::TypeName(name.span.content().to_string())))
     }
 
-    fn expression(&mut self) -> Result<Ast, ParseError> {
+    fn expression(&mut self) -> Result<AstNode, ParseError> {
         // TODO: actual expression parsing
         // probably going to be quite complicated
 
@@ -248,83 +339,75 @@ impl Parser {
         // TODO: method calls, bools, strings, floats
         // TODO: math expressions
 
-        if self.is(TokenKind::Integer, None)? {
-            let value = self
-                .current
-                .as_ref()
-                .unwrap()
-                .span
-                .content()
-                .parse()
-                .unwrap();
+        self.branch(&[
+            Branch::of_kind(TokenKind::Integer).then(&|this| {
+                let value = this
+                    .current
+                    .as_ref()
+                    .unwrap()
+                    .span
+                    .content()
+                    .parse()
+                    .unwrap();
 
-            self.nom();
+                this.nom();
 
-            // TODO: handle invalid ints
-            Ok(Ast::Integer(value))
-        } else if self.is(TokenKind::Open, Some(&"{"))? {
-            self.block()
-        } else if self.is(TokenKind::Identifier, None)? {
-            // TODO: handle method calls
+                // TODO: handle invalid ints
+                Ok(AstNode::new(Ast::Integer(value)))
+            }),
+            Branch::of_kind(TokenKind::Open)
+                .with_content(&"{")
+                .then(&Self::block),
+            Branch::of_kind(TokenKind::Identifier).then(&|this| {
+                // TODO: handle method calls
 
-            let name = self.current.as_ref().unwrap().content();
-            self.nom();
+                let name = this.current.as_ref().unwrap().content();
+                this.nom();
 
-            Ok(Ast::VariableAccess(name))
-        } else {
-            Err(ParseError::ExpectedTokenGot(
-                vec![
-                    (TokenKind::Integer, None),
-                    (TokenKind::String, None),
-                    (TokenKind::Float, None),
-                    (TokenKind::Boolean, None),
-                    (TokenKind::Open, Some("{".to_string())),
-                ],
-                self.current.clone().as_option(),
-            ))
-        }
+                Ok(AstNode::new(Ast::VariableAccess(name)))
+            }),
+        ])
     }
 
-    fn statement(&mut self) -> Result<Ast, ParseError> {
+    fn statement(&mut self) -> Result<AstNode, ParseError> {
         // TODO: patterns for assignment :(
 
-        if self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Equals, None) {
-            let name = self.expect(TokenKind::Identifier, None)?.content();
-            self.expect(TokenKind::Equals, None)?;
-            let value = self.expression()?;
+        self.branch(&[
+            Branch::of_kind(TokenKind::Identifier)
+                .when(&|this| this.next_is(TokenKind::Equals, None))
+                .then(&|this| {
+                    let name = this.expect(TokenKind::Identifier, None)?.content();
+                    this.expect(TokenKind::Equals, None)?;
+                    let value = this.expression()?;
 
-            Ok(Ast::Assignment {
-                name,
-                body: Box::new(value),
-            })
-        } else if self.accept(TokenKind::Identifier, Some(&"let"))? {
-            let name = self.expect(TokenKind::Identifier, None)?.content();
-            let mut type_ = None;
+                    Ok(AstNode::new(Ast::Assignment { name, body: value }))
+                }),
+            Branch::of_kind(TokenKind::Identifier)
+                .with_content(&"let")
+                .consume()
+                .then(&|this| {
+                    let name = this.expect(TokenKind::Identifier, None)?.content();
+                    let mut type_ = None;
 
-            if self.accept(TokenKind::Colon, None)? {
-                type_ = Some(self.type_()?);
-            }
+                    if this.accept(TokenKind::Colon, None)? {
+                        type_ = Some(this.type_()?);
+                    }
 
-            self.expect(TokenKind::Equals, None)?;
-            let value = self.expression()?;
+                    this.expect(TokenKind::Equals, None)?;
+                    let value = this.expression()?;
 
-            Ok(Ast::Let {
-                name,
-                type_: Box::new(type_),
-                body: Box::new(value),
-            })
-        } else {
-            Err(ParseError::ExpectedTokenGot(
-                vec![
-                    (TokenKind::Identifier, None),
-                    (TokenKind::Identifier, Some("let".to_string())),
-                ],
-                self.current.clone().as_option(),
-            ))
-        }
+                    Ok(AstNode::new(Ast::Let {
+                        name,
+                        type_,
+                        body: value,
+                    }))
+                }),
+        ])
     }
 
-    fn static_definition(&mut self, is_public: bool) -> Result<Ast, ParseError> {
+    fn static_definition(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
+        self.expect(TokenKind::Identifier, Some("static"))?;
+
         let name = self
             .expect(TokenKind::Identifier, None)?
             .span
@@ -337,15 +420,17 @@ impl Parser {
         let body = self.expression()?;
         self.expect(TokenKind::Semicolon, None)?;
 
-        Ok(Ast::Static {
+        Ok(Box::new(Ast::Static {
             public: is_public,
             name,
-            type_: Box::new(type_),
-            body: Box::new(body),
-        })
+            type_,
+            body,
+        }))
     }
 
-    fn class_definition(&mut self, is_public: bool) -> Result<Ast, ParseError> {
+    fn class_definition(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
+        self.expect(TokenKind::Identifier, Some("class"))?;
+
         let name = self
             .expect(TokenKind::Identifier, None)?
             .span
@@ -360,20 +445,20 @@ impl Parser {
 
         self.expect(TokenKind::Close, Some(&"}"))?;
 
-        Ok(Ast::Class {
+        Ok(Box::new(Ast::Class {
             public: is_public,
             name,
             body: vec![],
-        })
+        }))
     }
 
-    fn function_argument(&mut self, name: Token) -> Result<(String, Ast), ParseError> {
+    fn function_argument(&mut self, name: Token) -> Result<(String, AstNode), ParseError> {
         self.expect(TokenKind::Colon, None)?;
         let type_ = self.type_()?;
         Ok((name.content(), type_))
     }
 
-    fn function_arguments(&mut self) -> Result<Vec<(String, Ast)>, ParseError> {
+    fn function_arguments(&mut self) -> Result<Vec<(String, AstNode)>, ParseError> {
         self.expect(TokenKind::Open, Some(&"("))?;
 
         let mut args = vec![];
@@ -406,7 +491,7 @@ impl Parser {
             || (self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Equals, None)))
     }
 
-    fn block(&mut self) -> Result<Ast, ParseError> {
+    fn block(&mut self) -> Result<AstNode, ParseError> {
         let mut bloc = vec![];
         let mut return_ = None;
 
@@ -438,83 +523,82 @@ impl Parser {
 
         self.expect(TokenKind::Close, Some(&"}"))?;
 
-        Ok(Ast::Block {
+        Ok(AstNode::new(Ast::Block {
             statements: bloc,
-            return_: Box::new(return_),
-        })
+            return_value: return_,
+        }))
     }
 
-    fn function_definition(&mut self, is_public: bool) -> Result<Ast, ParseError> {
+    fn function_definition(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
+        self.expect(TokenKind::Identifier, Some("fn"))?;
+
         let name = self.expect(TokenKind::Identifier, None)?.content();
         let args = self.function_arguments()?;
 
-        let mut return_type: Option<Ast> = None;
+        let mut return_type = None;
 
         if self.accept(TokenKind::Colon, None)? {
             return_type = Some(self.type_()?);
         }
 
-        let body: Ast;
+        let body = self.branch(&[
+            Branch::of_kind(TokenKind::Equals).consume().then(&|this| {
+                let a = this.expression()?;
+                this.expect(TokenKind::Semicolon, None)?;
+                Ok(a)
+            }),
+            Branch::of_kind(TokenKind::Open)
+                .with_content(&"{")
+                .then(&Self::block),
+        ])?;
 
-        if self.accept(TokenKind::Equals, None)? {
-            body = self.expression()?;
-            self.expect(TokenKind::Semicolon, None)?;
-        } else if self.is(TokenKind::Open, Some(&"{"))? {
-            body = self.block()?;
-        } else {
-            return Err(ParseError::ExpectedTokenGot(
-                vec![
-                    (TokenKind::Equals, Some("=".to_string())),
-                    (TokenKind::Open, Some("{".to_string())),
-                ],
-                self.current.clone().as_option(),
-            ));
-        }
-
-        Ok(Ast::Function {
+        Ok(AstNode::new(Ast::Function {
             public: is_public,
             name,
             args,
-            return_: Box::new(return_type),
-            body: Box::new(body),
-        })
+            return_type,
+            body,
+        }))
     }
 
-    fn global_declaration(&mut self, is_public: bool) -> Result<Ast, ParseError> {
-        if self.accept(TokenKind::Identifier, Some(&"import"))? {
-            self.import_statement()
-        } else if self.accept(TokenKind::Identifier, Some(&"pub"))? {
-            self.global_declaration(true)
-        } else if self.accept(TokenKind::Identifier, Some(&"static"))? {
-            self.static_definition(is_public)
-        } else if self.accept(TokenKind::Identifier, Some(&"class"))? {
-            self.class_definition(is_public)
-        } else if self.accept(TokenKind::Identifier, Some(&"fn"))? {
-            self.function_definition(is_public)
-        } else {
-            panic!("unknown token: {:?}", self.current);
-        }
+    fn global_declaration(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
+        self.branch(&[
+            Branch::of_kind(TokenKind::Identifier)
+                .with_content("import")
+                .then(&Self::import_statement),
+            Branch::of_kind(TokenKind::Identifier)
+                .with_content("pub")
+                .consume()
+                .then(&|this| this.global_declaration(true)),
+            Branch::of_kind(TokenKind::Identifier)
+                .with_content("static")
+                .then(&move |this| this.static_definition(is_public)),
+            Branch::of_kind(TokenKind::Identifier)
+                .with_content("class")
+                .then(&move |this| this.class_definition(is_public)),
+            Branch::of_kind(TokenKind::Identifier)
+                .with_content("fn")
+                .then(&move |this| this.function_definition(is_public)),
+        ])
     }
 
-    fn program(&mut self) -> Result<Ast, ParseError> {
+    fn program(&mut self) -> Result<AstNode, ParseError> {
         let mut nodes = vec![];
 
-        if self.current.is_none() {
-            return Ok(Ast::Program(nodes));
-        }
-
-        nodes.push(self.global_declaration(false)?);
-
-        while !self.current.is_none() {
-            nodes.push(self.global_declaration(false)?);
-        }
-
         if self.current.is_ok() {
-            return Err(ParseError::UnexpectedToken(
-                self.current.clone().as_option(),
-            ));
+            nodes.push(self.global_declaration(false)?);
+
+            while !self.current.is_none() {
+                nodes.push(self.global_declaration(false)?);
+            }
+
+            if self.current.is_ok() {
+                return Err(ParseError::UnexpectedToken(
+                    self.current.clone().as_option(),
+                ));
+            }
         }
 
-        Ok(Ast::Program(nodes))
+        Ok(AstNode::new(Ast::Program(nodes)))
     }
 }

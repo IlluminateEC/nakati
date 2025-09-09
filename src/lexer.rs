@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
-use crate::common::{OpRes, OptionalResult, Source, Span, Token, TokenKind};
+use crate::common::{OpRes, OptionalResult, Source, Span};
+use crate::token::{Token, TokenKind};
 
 #[derive(Debug, Clone)]
 pub enum LexError {

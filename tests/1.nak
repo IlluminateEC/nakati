@@ -75,8 +75,7 @@ pub class Main {
 //     pub set a(self, value: u8) = self.vector.w = value;
 // }
 
-pub fn awa() 
-{
+pub fn awa() {
     // self.awa();
     let a = 2;
     a = 2;
