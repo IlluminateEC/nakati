@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     ops::{FromResidual, Try},
-    sync::Arc,
+    rc::Rc,
 };
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,18 +13,18 @@ pub struct Source {
 }
 
 impl Source {
-    pub fn new(name: impl ToString, body: impl ToString) -> Arc<Self> {
+    pub fn new(name: impl ToString, body: impl ToString) -> Rc<Self> {
         let new_body = body.to_string();
         let graphemes = new_body.graphemes(true).map(|g| g.to_string()).collect();
 
-        Arc::new(Self {
+        Rc::new(Self {
             name: name.to_string(),
             body: new_body,
             graphemes,
         })
     }
 
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Arc<Self> {
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Rc<Self> {
         // TODO: error handling
 
         let content = std::fs::read_to_string(path.as_ref());
@@ -43,7 +43,7 @@ impl Debug for Source {
 
 #[derive(Clone)]
 pub struct Span {
-    source: Arc<Source>,
+    source: Rc<Source>,
 
     start: usize,
     start_line: usize,
@@ -57,7 +57,7 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(source: Arc<Source>) -> Self {
+    pub fn new(source: Rc<Source>) -> Self {
         Self {
             source,
 
@@ -160,7 +160,13 @@ impl Span {
             .collect::<Vec<_>>();
 
         for (idx, grapheme) in graphemes {
-            if self.source.graphemes.get(self.end_grapheme + idx) != Some(&grapheme.to_string()) {
+            let src_grapheme = self.source.graphemes.get(self.end_grapheme + idx);
+
+            if src_grapheme.is_none() {
+                return false;
+            }
+
+            if src_grapheme.unwrap() != grapheme {
                 return false;
             }
         }

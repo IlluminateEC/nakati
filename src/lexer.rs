@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::common::{OpRes, OptionalResult, Source, Span, Token, TokenKind};
 
@@ -8,14 +8,12 @@ pub enum LexError {
 }
 
 pub struct Lexer {
-    // source: Arc<Source>,
     span: Span,
 }
 
 impl Lexer {
-    pub fn new(source: Arc<Source>) -> Self {
+    pub fn new(source: Rc<Source>) -> Self {
         Self {
-            // source: source.clone(),
             span: Span::new(source),
         }
     }
@@ -56,7 +54,8 @@ impl Lexer {
         false
     }
 
-    pub fn next_token(&mut self) -> OptionalResult<Token, LexError> {
+    #[inline]
+    fn discard_ignorables(&mut self) {
         let mut old_span = self.span.clone();
         let mut changed = true;
 
@@ -71,6 +70,10 @@ impl Lexer {
             changed = self.span != old_span;
             old_span = self.span.clone();
         }
+    }
+
+    pub fn next_token(&mut self) -> OptionalResult<Token, LexError> {
+        self.discard_ignorables();
 
         let g = self.span.cur();
 

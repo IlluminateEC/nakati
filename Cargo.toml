@@ -6,3 +6,10 @@ edition = "2024"
 [dependencies]
 emojis = "0.7.2"
 unicode-segmentation = "1.12.0"
+
+[profile.release]
+lto = true
+debug = "line-tables-only"
+
+[profile.release.package.unicode-segmentation]
+opt-level = 3
