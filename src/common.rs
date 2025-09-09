@@ -59,7 +59,7 @@ pub struct Span {
 impl Span {
     pub fn new(source: Arc<Source>) -> Self {
         Self {
-            source: source,
+            source,
 
             start: 0,
             start_column: 0,
@@ -132,7 +132,7 @@ impl Span {
 
     pub fn bump_while(&mut self, predicate: impl Fn(&str) -> bool) {
         while let Some(grapheme) = self.cur() {
-            if !predicate(&grapheme) {
+            if !predicate(grapheme) {
                 break;
             }
 
@@ -142,7 +142,7 @@ impl Span {
 
     pub fn skip_while(&mut self, predicate: impl Fn(&str) -> bool) {
         while let Some(grapheme) = self.cur() {
-            if !predicate(&grapheme) {
+            if !predicate(grapheme) {
                 break;
             }
 
@@ -153,16 +153,6 @@ impl Span {
     }
 
     pub fn has(&self, value: impl AsRef<str>) -> bool {
-        // if self.end + (&value).as_ref().len() > self.source.body.len() {
-        //     return false;
-        // }
-
-        // let mut temp = self.clone();
-
-        // temp.bump(&value);
-
-        // temp.content() == value.as_ref()
-
         let graphemes = value
             .as_ref()
             .graphemes(true)
@@ -252,6 +242,26 @@ impl Token {
     pub fn has(&self, content: impl AsRef<str>) -> bool {
         self.span.content() == content.as_ref()
     }
+
+    pub fn content(&self) -> String {
+        self.span.content().to_string()
+    }
+
+    pub fn is_and_has_content(&self, kind: TokenKind, content: Option<&dyn AsRef<str>>) -> bool {
+        if self.kind == kind {
+            if let Some(content) = content {
+                if self.span.content() == content.as_ref() {
+                    return true;
+                }
+
+                return false;
+            } else {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 impl PartialEq for Token {
@@ -291,26 +301,17 @@ impl<T, E> OptionalResult<T, E> {
 
     #[inline]
     pub const fn is_ok(&self) -> bool {
-        match self {
-            Self::Ok(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Ok(_))
     }
 
     #[inline]
     pub const fn is_error(&self) -> bool {
-        match self {
-            Self::Err(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Err(_))
     }
 
     #[inline]
     pub const fn is_none(&self) -> bool {
-        match self {
-            Self::None => true,
-            _ => false,
-        }
+        matches!(self, Self::None)
     }
 
     #[inline]
@@ -340,6 +341,24 @@ impl<T, E> OptionalResult<T, E> {
             Self::Ok(v) => OptionalResult::Ok(v),
             Self::Err(e) => OptionalResult::Err(e),
             Self::None => OptionalResult::None,
+        }
+    }
+
+    #[inline]
+    pub fn map<U>(self, op: impl Fn(T) -> U) -> OptionalResult<U, E> {
+        match self {
+            Self::Ok(v) => OptionalResult::Ok(op(v)),
+            Self::Err(e) => OptionalResult::Err(e),
+            Self::None => OptionalResult::None,
+        }
+    }
+
+    #[inline]
+    pub fn unwrap_or(self, default: T) -> T {
+        match self {
+            Self::Ok(v) => v,
+            Self::Err(_) => default,
+            Self::None => default,
         }
     }
 }
@@ -405,11 +424,31 @@ pub enum Ast {
         type_: Box<Ast>,
         body: Box<Ast>,
     },
+
+    // TODO
+    Let {
+        name: String,
+        type_: Box<Option<Ast>>,
+        body: Box<Ast>,
+    },
+    // TODO
+    Assignment {
+        name: String,
+        body: Box<Ast>,
+    },
+
     Class {
         public: bool,
         name: String,
         // TODO: inheritance, implementations
         body: Vec<Ast>,
+    },
+    Function {
+        public: bool,
+        name: String,
+        args: Vec<(String, Ast)>,
+        return_: Box<Option<Ast>>,
+        body: Box<Ast>,
     },
 
     TypeName(String),
@@ -419,4 +458,11 @@ pub enum Ast {
     String(String),
     Boolean(bool),
     Float(u128, u128),
+
+    VariableAccess(String),
+
+    Block {
+        statements: Vec<Ast>,
+        return_: Box<Option<Ast>>,
+    },
 }

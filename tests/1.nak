@@ -4,6 +4,23 @@ import Out from "@nakati/io";
 
 pub static example: u8 = 1;
 
+// fn awa() {
+//     Out.println("gwah at you");
+// }
+
+fn one() = 1;
+
+pub fn two() = 2;
+// fn not_three() = {};
+
+pub fn idk(awa: Awa, gwah: Gwah) = 32;
+
+pub fn blockd(wawai: Awawa) {
+    let number = 1;
+    let number2 = 1;
+    let number3 = 1;
+}
+
 pub class Main {
 //     pub fn two(): u8 = 1 + 1;
 // 
@@ -17,3 +34,57 @@ pub class Main {
 //         // Out.println("Hello, {}", args.get(0));
 //     };
 }
+
+// pub fn main(args: Vector[String]) -> i8 {
+//     wawa();
+//     awa();
+// 
+//     Seq.new();
+//     Map.new();
+// 
+//     32
+// }
+// 
+// pub fn main(args: {String}) -> i8 = {
+//     123
+// };
+// 
+// Vector[3; i8] // → 3D int vector → x, y, z
+// Vector[4; i8] // → 4D int vector → x, y, z, w
+// 
+// type Vector3 = Vector[3; f32];
+// 
+// Seq[i8] // Sequence
+// Seq[V] implements Sequence[V]
+// Map[K, V] implements Sequence[(K, V)]
+// 
+// for (k, v) in some_map {
+// 
+// }
+// 
+// pub class RGBA {
+//     vector: Vector[4; u8];
+// 
+//     pub get r(self) = self.vector.x;
+//     pub set r(self, value: u8) = self.vector.x = value;
+//     pub get g(self) = self.vector.y;
+//     pub set g(self, value: u8) = self.vector.y = value;
+//     pub get b(self) = self.vector.z;
+//     pub set b(self, value: u8) = self.vector.z = value;
+//     pub get a(self) = self.vector.w;
+//     pub set a(self, value: u8) = self.vector.w = value;
+// }
+
+pub fn awa() 
+{
+    // self.awa();
+    let a = 2;
+    a = 2;
+
+    let 👍 = 1;
+
+    a
+}
+
+// Block = ((Statement | Expression), ";")*, Expression?;
+// Expression = Block | ...;

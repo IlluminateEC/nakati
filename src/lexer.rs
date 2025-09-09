@@ -25,7 +25,7 @@ impl Lexer {
     }
 
     fn is_digit(g: &str) -> bool {
-        g.chars().nth(0).unwrap().is_digit(10)
+        g.chars().nth(0).unwrap().is_ascii_digit()
     }
 
     fn is_whitespace(g: &str) -> bool {
@@ -47,7 +47,7 @@ impl Lexer {
     fn at_any(&self, targets: &[&str]) -> bool {
         if let Some(cur) = self.span.cur() {
             for target in targets {
-                if target == &cur {
+                if target == cur {
                     return true;
                 }
             }
@@ -56,7 +56,7 @@ impl Lexer {
         false
     }
 
-    pub fn next(&mut self) -> OptionalResult<Token, LexError> {
+    pub fn next_token(&mut self) -> OptionalResult<Token, LexError> {
         let mut old_span = self.span.clone();
         let mut changed = true;
 
@@ -80,7 +80,7 @@ impl Lexer {
 
         let g = g.unwrap();
 
-        OpRes::Ok(if Self::is_alphabetic(&g) {
+        OpRes::Ok(if Self::is_alphabetic(g) {
             self.span.bump_while(Self::is_alphanumeric);
 
             let content = &self.span.content();
@@ -90,7 +90,7 @@ impl Lexer {
             } else {
                 Token::new(&self.span, TokenKind::Identifier)
             }
-        } else if Self::is_digit(&g) {
+        } else if Self::is_digit(g) {
             self.span.bump_while(Self::is_digit);
 
             if self.at(".") {

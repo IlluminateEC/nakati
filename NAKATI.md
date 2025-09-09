@@ -22,3 +22,15 @@ Tracing.withSpan((span) => {
     });
 });
 ```
+
+# Standard Library
+## `class Seq[T]` — Dynamic Arrays
+## `class Map[K, V]` — Mappings
+## `interface Sequential[T]` — interface for iterable / sequential types
+- ```
+let a: Map[i8, u32] = Map.new();
+// Map[K, V] implements Sequential[(K, V)]
+for (k, v) in a {
+    // k is i8
+    // v is u32
+}```
