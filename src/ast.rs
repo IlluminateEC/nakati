@@ -26,7 +26,7 @@ pub enum Ast {
     },
     // TODO
     Assignment {
-        name: SString,
+        pattern: AstNode,
         body: AstNode,
     },
 
@@ -53,6 +53,7 @@ pub enum Ast {
     Float(u128, u128),
 
     VariableAccess(String),
+    MemberAccess(AstNode, SString),
 
     Block {
         statements: Vec<AstNode>,

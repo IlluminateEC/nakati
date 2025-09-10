@@ -643,6 +643,30 @@ impl Parser {
         ))
     }
 
+    fn variable_access_begin(
+        &mut self,
+        is_in_expresssion_context: bool,
+    ) -> Result<AstNode, ParseError> {
+        if is_in_expresssion_context {
+            todo!();
+        }
+
+        self.begin_scope();
+
+        let name = self.current_identifier()?;
+        let mut access = AstNode::new(Ast::VariableAccess(name.value), name.span);
+
+        while self.accept(TokenKind::Dot, None)? {
+            let name = self.current_identifier()?;
+            access = AstNode::new(Ast::MemberAccess(access, name), self.current_scope());
+        }
+
+        self.end_scope(); // don't call when calling assignment. assignment should do that.
+
+        // maybe refactor assignment to have a dedicated `=` and later method
+        // TODO: call assignment
+    }
+
     fn global_declaration(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
         self.branch(&[
             Branch::of_kind(TokenKind::Identifier)
