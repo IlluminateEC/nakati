@@ -35,9 +35,7 @@ impl Source {
 
 impl Debug for Source {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Source")
-            .field("name", &self.name)
-            .finish_non_exhaustive()
+        f.write_fmt(format_args!("<Source name={:?}>", self.name))
     }
 }
 
@@ -173,6 +171,22 @@ impl Span {
 
         true
     }
+
+    pub fn fit(&mut self, other: &Self) {
+        if other.start < self.start {
+            self.start = other.start;
+            self.start_line = other.start_line;
+            self.start_column = other.start_column;
+            self.start_grapheme = other.start_grapheme;
+        }
+
+        if other.end > self.end {
+            self.end = other.end;
+            self.end_line = other.end_line;
+            self.end_column = other.end_column;
+            self.end_grapheme = other.end_grapheme;
+        }
+    }
 }
 
 impl PartialEq for Span {
@@ -190,12 +204,12 @@ impl PartialEq for Span {
 
 impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Span")
-            .field("source", &self.source)
-            .field("start", &self.start)
-            .field("end", &self.end)
-            .field("content", &self.content())
-            .finish_non_exhaustive()
+        f.write_fmt(format_args!(
+            "<{}:{} length {}>",
+            self.start_line + 1,
+            self.start_column + 1,
+            self.end - self.start
+        ))
     }
 }
 

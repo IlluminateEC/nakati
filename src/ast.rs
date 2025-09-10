@@ -60,10 +60,8 @@ pub enum Ast {
     },
 }
 
-// pub type SString = Spanned<String>;
-// pub type AstNode = BoxSpanned<Ast>;
-pub type SString = String;
-pub type AstNode = Box<Ast>;
+pub type SString = Spanned<String>;
+pub type AstNode = BoxSpanned<Ast>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spanned<T> {
@@ -85,7 +83,7 @@ impl<T> Deref for Spanned<T> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct BoxSpanned<T>(Spanned<Box<T>>);
 
 impl<T> BoxSpanned<T> {
@@ -99,5 +97,11 @@ impl<T> Deref for BoxSpanned<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.0.value
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for BoxSpanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }

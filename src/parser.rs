@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use crate::{
-    ast::{Ast, AstNode},
-    common::OptionalResult,
+    ast::{Ast, AstNode, SString},
+    common::{OptionalResult, Span},
     lexer::{LexError, Lexer},
     token::{Token, TokenKind},
 };
@@ -77,6 +77,7 @@ pub struct Parser {
     lexer: Lexer,
     current: OptionalResult<Token, LexError>,
     next: OptionalResult<Token, LexError>,
+    span_stack: Vec<Span>,
 }
 
 impl Parser {
@@ -88,6 +89,7 @@ impl Parser {
             lexer,
             current,
             next,
+            span_stack: vec![],
         }
     }
 
@@ -97,7 +99,48 @@ impl Parser {
 }
 
 impl Parser {
+    fn push_span(&mut self, span: Span) {
+        self.span_stack.push(span);
+    }
+
+    fn current_scope(&self) -> Span {
+        self.span_stack
+            .last()
+            .cloned()
+            .expect("span stack should not be empty")
+    }
+
+    fn current_span(&self) -> Option<Span> {
+        let a = self.current.as_ref().map(|token| &token.span);
+
+        if a.is_ok() {
+            Some(a.unwrap().clone())
+        } else {
+            None
+        }
+    }
+
+    fn begin_scope(&mut self) {
+        if let Some(current_span) = self.current_span() {
+            self.push_span(current_span);
+        }
+    }
+
+    fn end_scope(&mut self) -> Span {
+        self.span_stack
+            .pop()
+            .expect("span stack should not be empty")
+    }
+}
+
+impl Parser {
     fn nom(&mut self) {
+        for span in &mut self.span_stack {
+            if let OptionalResult::Ok(current) = &self.current {
+                span.fit(&current.span);
+            }
+        }
+
         std::mem::swap(&mut self.current, &mut self.next);
 
         self.next = self.lexer.next_token();
@@ -193,11 +236,17 @@ impl Parser {
         } in branches
         {
             if self.is(*kind, *content)? && predicate.map(|f| f(self)).unwrap_or(true) {
+                self.begin_scope();
+
                 if *consume {
                     self.nom();
                 }
 
-                return handler(self);
+                let ast_node = handler(self);
+
+                self.end_scope();
+
+                return ast_node;
             }
         }
 
@@ -213,6 +262,22 @@ impl Parser {
                 .collect(),
             self.current.clone().as_option(),
         ))
+    }
+
+    /// Returns a spanned string created from the current identifier token.
+    fn current_identifier(&mut self) -> ParseResult<SString> {
+        let token = self.expect(TokenKind::Identifier, None)?;
+
+        Ok(SString::new(token.content(), token.span))
+    }
+
+    /// Returns a spanned string created from the current string token.
+    fn current_string(&mut self) -> ParseResult<SString> {
+        let token = self.expect(TokenKind::String, None)?;
+
+        // todo: unescaping
+
+        Ok(SString::new(token.content(), token.span))
     }
 }
 
@@ -230,6 +295,8 @@ struct Branch<'a> {
 
 impl<'a> Branch<'a> {
     #[inline]
+    /// Begins the process of creating a new branch.
+    /// Specifies the token kind to expect.
     pub fn of_kind(kind: TokenKind) -> Self {
         Self {
             kind,
@@ -240,24 +307,28 @@ impl<'a> Branch<'a> {
     }
 
     #[inline]
+    /// Specifies that this branch's token will have specific content
     pub fn with_content(mut self, content: &'static str) -> Self {
         self.content = Some(content);
         self
     }
 
     #[inline]
+    /// Provides a condition for when this should match, beyond the basic kind and content
     pub fn when(mut self, predicate: Predicate<'a>) -> Self {
         self.predicate = Some(predicate);
         self
     }
 
     #[inline]
+    /// Sets that the token should be consumed rather than just checked for
     pub fn consume(mut self) -> Self {
         self.consume = !self.consume;
         self
     }
 
     #[inline]
+    /// Finishes creating the branch by specifying a closure to be run once this branch is matched.
     pub fn then(self, handler: Handler<'a>) -> FinishedBranch<'a> {
         FinishedBranch {
             kind: self.kind,
@@ -278,21 +349,12 @@ struct FinishedBranch<'a> {
 }
 
 impl Parser {
-    fn import_name(&mut self) -> Result<(String, Option<String>), ParseError> {
-        let name = self
-            .expect(TokenKind::Identifier, None)?
-            .span
-            .content()
-            .to_string();
+    fn import_symbol_and_alias(&mut self) -> Result<(SString, Option<SString>), ParseError> {
+        let name = self.current_identifier()?;
         let mut alias = None;
 
         if self.accept(TokenKind::Identifier, Some(&"as"))? {
-            alias = Some(
-                self.expect(TokenKind::Identifier, None)?
-                    .span
-                    .content()
-                    .to_string(),
-            );
+            alias = Some(self.current_identifier()?);
         }
 
         Ok((name, alias))
@@ -303,31 +365,36 @@ impl Parser {
 
         let mut names = vec![];
 
-        names.push(self.import_name()?);
+        names.push(self.import_symbol_and_alias()?);
 
         while self.accept(TokenKind::Comma, None)? {
-            names.push(self.import_name()?);
+            names.push(self.import_symbol_and_alias()?);
         }
 
         self.expect(TokenKind::Identifier, Some(&"from"))?;
 
-        let module = self.expect(TokenKind::String, None)?;
+        let module = self.current_string()?;
 
         self.expect(TokenKind::Semicolon, None)?;
 
-        Ok(AstNode::new(Ast::Import {
-            names,
-            module: module.span.content().to_string(),
-        }))
+        Ok(AstNode::new(
+            Ast::Import { names, module },
+            self.current_scope(),
+        ))
     }
 
     fn type_(&mut self) -> Result<AstNode, ParseError> {
         // TODO: actual parsing of types
         // generics
 
+        self.begin_scope();
+
         let name = self.expect(TokenKind::Identifier, None)?;
 
-        Ok(AstNode::new(Ast::TypeName(name.span.content().to_string())))
+        Ok(AstNode::new(
+            Ast::TypeName(name.span.content().to_string()),
+            self.end_scope(),
+        ))
     }
 
     fn expression(&mut self) -> Result<AstNode, ParseError> {
@@ -348,12 +415,12 @@ impl Parser {
                     .span
                     .content()
                     .parse()
-                    .unwrap();
+                    .expect("integer should parse correctly");
 
                 this.nom();
 
                 // TODO: handle invalid ints
-                Ok(AstNode::new(Ast::Integer(value)))
+                Ok(AstNode::new(Ast::Integer(value), this.current_scope()))
             }),
             Branch::of_kind(TokenKind::Open)
                 .with_content(&"{")
@@ -364,7 +431,10 @@ impl Parser {
                 let name = this.current.as_ref().unwrap().content();
                 this.nom();
 
-                Ok(AstNode::new(Ast::VariableAccess(name)))
+                Ok(AstNode::new(
+                    Ast::VariableAccess(name),
+                    this.current_scope(),
+                ))
             }),
         ])
     }
@@ -376,17 +446,20 @@ impl Parser {
             Branch::of_kind(TokenKind::Identifier)
                 .when(&|this| this.next_is(TokenKind::Equals, None))
                 .then(&|this| {
-                    let name = this.expect(TokenKind::Identifier, None)?.content();
+                    let name = this.current_identifier()?;
                     this.expect(TokenKind::Equals, None)?;
                     let value = this.expression()?;
 
-                    Ok(AstNode::new(Ast::Assignment { name, body: value }))
+                    Ok(AstNode::new(
+                        Ast::Assignment { name, body: value },
+                        this.current_scope(),
+                    ))
                 }),
             Branch::of_kind(TokenKind::Identifier)
                 .with_content(&"let")
                 .consume()
                 .then(&|this| {
-                    let name = this.expect(TokenKind::Identifier, None)?.content();
+                    let name = this.current_identifier()?;
                     let mut type_ = None;
 
                     if this.accept(TokenKind::Colon, None)? {
@@ -396,11 +469,14 @@ impl Parser {
                     this.expect(TokenKind::Equals, None)?;
                     let value = this.expression()?;
 
-                    Ok(AstNode::new(Ast::Let {
-                        name,
-                        type_,
-                        body: value,
-                    }))
+                    Ok(AstNode::new(
+                        Ast::Let {
+                            name,
+                            type_,
+                            body: value,
+                        },
+                        this.current_scope(),
+                    ))
                 }),
         ])
     }
@@ -408,11 +484,7 @@ impl Parser {
     fn static_definition(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
         self.expect(TokenKind::Identifier, Some("static"))?;
 
-        let name = self
-            .expect(TokenKind::Identifier, None)?
-            .span
-            .content()
-            .to_string();
+        let name = self.current_identifier()?;
 
         self.expect(TokenKind::Colon, None)?;
         let type_ = self.type_()?;
@@ -420,22 +492,21 @@ impl Parser {
         let body = self.expression()?;
         self.expect(TokenKind::Semicolon, None)?;
 
-        Ok(Box::new(Ast::Static {
-            public: is_public,
-            name,
-            type_,
-            body,
-        }))
+        Ok(AstNode::new(
+            Ast::Static {
+                public: is_public,
+                name,
+                type_,
+                body,
+            },
+            self.current_scope(),
+        ))
     }
 
     fn class_definition(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
         self.expect(TokenKind::Identifier, Some("class"))?;
 
-        let name = self
-            .expect(TokenKind::Identifier, None)?
-            .span
-            .content()
-            .to_string();
+        let name = self.current_identifier()?;
 
         // TODO: inheritance, implements
 
@@ -445,11 +516,14 @@ impl Parser {
 
         self.expect(TokenKind::Close, Some(&"}"))?;
 
-        Ok(Box::new(Ast::Class {
-            public: is_public,
-            name,
-            body: vec![],
-        }))
+        Ok(AstNode::new(
+            Ast::Class {
+                public: is_public,
+                name,
+                body: vec![],
+            },
+            self.current_scope(),
+        ))
     }
 
     fn function_argument(&mut self, name: Token) -> Result<(String, AstNode), ParseError> {
@@ -492,6 +566,7 @@ impl Parser {
     }
 
     fn block(&mut self) -> Result<AstNode, ParseError> {
+        self.begin_scope();
         let mut bloc = vec![];
         let mut return_ = None;
 
@@ -523,16 +598,20 @@ impl Parser {
 
         self.expect(TokenKind::Close, Some(&"}"))?;
 
-        Ok(AstNode::new(Ast::Block {
-            statements: bloc,
-            return_value: return_,
-        }))
+        Ok(AstNode::new(
+            Ast::Block {
+                statements: bloc,
+                return_value: return_,
+            },
+            self.end_scope(),
+        ))
     }
 
     fn function_definition(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
+        self.begin_scope();
         self.expect(TokenKind::Identifier, Some("fn"))?;
 
-        let name = self.expect(TokenKind::Identifier, None)?.content();
+        let name = self.current_identifier()?;
         let args = self.function_arguments()?;
 
         let mut return_type = None;
@@ -552,13 +631,16 @@ impl Parser {
                 .then(&Self::block),
         ])?;
 
-        Ok(AstNode::new(Ast::Function {
-            public: is_public,
-            name,
-            args,
-            return_type,
-            body,
-        }))
+        Ok(AstNode::new(
+            Ast::Function {
+                public: is_public,
+                name,
+                args,
+                return_type,
+                body,
+            },
+            self.end_scope(),
+        ))
     }
 
     fn global_declaration(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
@@ -583,6 +665,7 @@ impl Parser {
     }
 
     fn program(&mut self) -> Result<AstNode, ParseError> {
+        self.begin_scope();
         let mut nodes = vec![];
 
         if self.current.is_ok() {
@@ -599,6 +682,6 @@ impl Parser {
             }
         }
 
-        Ok(AstNode::new(Ast::Program(nodes)))
+        Ok(AstNode::new(Ast::Program(nodes), self.end_scope()))
     }
 }
