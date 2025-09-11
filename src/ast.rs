@@ -20,7 +20,7 @@ pub enum Ast {
 
     // TODO
     Let {
-        name: SString,
+        pattern: AstNode,
         type_: Option<AstNode>,
         body: AstNode,
     },

@@ -2,3 +2,26 @@ fn main() = {
     a.b();
     a.b = 2;
 };
+
+
+
+
+
+// IDENTIFIER DOT IDENTIFIER OPEN CLOSE SEMICOLON
+self.awa();
+// IDENTIFIER DOT IDENTIFIER EQUALS INTEGER SEMICOLON
+self.awa = 1;
+
+self.awa.gwah();
+self.awa.gwah = 1;
+
+1 = 2 // Expression -- equality check >:3
+a = 2 // Statement
+
+some_macro! {
+    awa => awawawawa,
+    ref krfjgoidjfuogdfjh: 98352 = 12394
+}
+
+// Block = ((Statement | Expression), ";")*, Expression?;
+// Expression = Block | ...;

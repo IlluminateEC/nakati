@@ -84,6 +84,3 @@ pub fn awa() {
 
     a
 }
-
-// Block = ((Statement | Expression), ";")*, Expression?;
-// Expression = Block | ...;
