@@ -570,10 +570,36 @@ impl Parser {
     }
 
     /// does not consume anything unless the entire sequence matches
+    /// TODO: this will probably consume a while loop's first line?
     fn beginning_statement_or_expression(&mut self) -> Result<Option<AstNode>, ParseError> {
-        Err(ParseError::Todo(
-            "statement and expression beginning".to_string(),
-        ))
+        self.begin_scope();
+
+        if self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Identifier, None) {
+            return Ok(None);
+        }
+
+        if self.is(TokenKind::Identifier, None)? {
+            // todo: return None instead of Err
+            let name = self.current_identifier()?;
+            let mut access = AstNode::new(Ast::VariableAccess(name.value), name.span);
+
+            while self.is(TokenKind::Dot, None)? || self.is(TokenKind::Open, Some("("))? {
+                if self.accept(TokenKind::Dot, None)? {
+                    let name = self.current_identifier()?;
+                    access = AstNode::new(Ast::MemberAccess(access, name), self.current_scope());
+                } else {
+                    let args = self.args()?;
+                    access = AstNode::new(Ast::Call(access, args), self.current_scope());
+                }
+            }
+
+            self.end_scope();
+
+            Ok(Some(access))
+        } else {
+            self.end_scope();
+            Ok(None)
+        }
     }
 
     fn args(&mut self) -> ParseResult<Vec<AstNode>> {
@@ -601,24 +627,26 @@ impl Parser {
             self.begin_scope();
 
             if let Some(access_expr) = self.beginning_statement_or_expression()? {
-                // self.awa
-                // self.awa().awa
-
                 if self.accept(TokenKind::Equals, None)? {
-                    self.expect(TokenKind::Semicolon, None)?;
-
                     let expr = self.expression()?;
-                } else if self.is(TokenKind::Open, Some("("))? {
-                } else {
-                    if self.accept(TokenKind::Semicolon, None)? {
-                        bloc.push(access_expr);
-                        self.end_scope();
-                        continue;
-                    } else {
-                        return_ = Some(access_expr);
-                        self.end_scope();
-                        break;
-                    }
+
+                    bloc.push(AstNode::new(
+                        Ast::Assignment {
+                            pattern: access_expr,
+                            body: expr,
+                        },
+                        self.end_scope(),
+                    ));
+
+                    self.expect(TokenKind::Semicolon, None)?;
+                } else if self.accept(TokenKind::Semicolon, None)? {
+                    bloc.push(access_expr);
+                    self.end_scope();
+                    continue;
+                } else if self.is(TokenKind::Close, Some("}"))? {
+                    return_ = Some(access_expr);
+                    self.end_scope();
+                    break;
                 }
             } else if self.starts_statement()? {
                 let statement = self.statement()?;
@@ -638,6 +666,9 @@ impl Parser {
                     self.end_scope();
                     break;
                 }
+            } else if self.is(TokenKind::Close, Some("}"))? {
+                self.end_scope();
+                break;
             } else {
                 return Err(ParseError::UnexpectedToken(
                     self.current.clone().as_option(),
@@ -691,30 +722,6 @@ impl Parser {
             self.end_scope(),
         ))
     }
-
-    // fn variable_access_begin(
-    //     &mut self,
-    //     is_in_expresssion_context: bool,
-    // ) -> Result<AstNode, ParseError> {
-    //     if is_in_expresssion_context {
-    //         todo!();
-    //     }
-
-    //     self.begin_scope();
-
-    //     let name = self.current_identifier()?;
-    //     let mut access = AstNode::new(Ast::VariableAccess(name.value), name.span);
-
-    //     while self.accept(TokenKind::Dot, None)? {
-    //         let name = self.current_identifier()?;
-    //         access = AstNode::new(Ast::MemberAccess(access, name), self.current_scope());
-    //     }
-
-    //     self.end_scope(); // don't call when calling assignment. assignment should do that.
-
-    //     // maybe refactor assignment to have a dedicated `=` and later method
-    //     // TODO: call assignment
-    // }
 
     fn global_declaration(&mut self, is_public: bool) -> Result<AstNode, ParseError> {
         self.branch(&[

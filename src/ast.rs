@@ -54,6 +54,7 @@ pub enum Ast {
 
     VariableAccess(String),
     MemberAccess(AstNode, SString),
+    Call(AstNode, Vec<AstNode>),
 
     Block {
         statements: Vec<AstNode>,
