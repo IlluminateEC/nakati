@@ -227,14 +227,15 @@ impl Parser {
     // TODO: make it return a closure that takes an argument
     #[inline]
     fn branch(&mut self, branches: &[FinishedBranch]) -> ParseResult<AstNode> {
-        for FinishedBranch {
-            kind,
-            content,
-            predicate,
-            handler,
-            consume,
-        } in branches
-        {
+        for branch in branches {
+            let FinishedBranch {
+                kind,
+                content,
+                predicate,
+                handler,
+                consume,
+            } = branch;
+
             if self.is(*kind, *content)? && predicate.map(|f| f(self)).unwrap_or(true) {
                 self.begin_scope();
 
@@ -428,13 +429,14 @@ impl Parser {
             Branch::of_kind(TokenKind::Identifier).then(&|this| {
                 // TODO: handle method calls
 
-                let name = this.current.as_ref().unwrap().content();
-                this.nom();
+                let access = this.beginning_statement_or_expression(true)?;
 
-                Ok(AstNode::new(
-                    Ast::VariableAccess(name),
-                    this.current_scope(),
-                ))
+                if let Some(access) = access {
+                    Ok(access)
+                } else {
+                    // apparently not actually used somehow.
+                    Err(ParseError::UnexpectedToken(this.next.clone().as_option()))
+                }
             }),
         ])
     }
@@ -451,7 +453,10 @@ impl Parser {
                     let value = this.expression()?;
 
                     Ok(AstNode::new(
-                        Ast::Assignment { name, body: value },
+                        Ast::Assignment {
+                            pattern: AstNode::new(Ast::VariableAccess(name.value), name.span),
+                            body: value,
+                        },
                         this.current_scope(),
                     ))
                 }),
@@ -471,7 +476,7 @@ impl Parser {
 
                     Ok(AstNode::new(
                         Ast::Let {
-                            name,
+                            pattern: AstNode::new(Ast::VariableAccess(name.value), name.span),
                             type_,
                             body: value,
                         },
@@ -565,7 +570,65 @@ impl Parser {
             || (self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Equals, None)))
     }
 
-    fn block(&mut self) -> Result<AstNode, ParseError> {
+    /// does not consume anything unless the entire sequence matches
+    /// TODO: this will probably consume a while loop's first line?
+    fn beginning_statement_or_expression(
+        &mut self,
+        is_in_expression: bool,
+    ) -> Result<Option<AstNode>, ParseError> {
+        if self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Identifier, None) {
+            return Ok(None);
+        }
+
+        self.begin_scope();
+
+        if self.is(TokenKind::Identifier, None)? {
+            // todo: return None instead of Err
+            let name = self.current_identifier()?;
+            let mut access = AstNode::new(Ast::VariableAccess(name.value), name.span);
+
+            while self.is(TokenKind::Dot, None)? || self.is(TokenKind::Open, Some("("))? {
+                if self.accept(TokenKind::Dot, None)? {
+                    let name = self.current_identifier()?;
+                    access = AstNode::new(Ast::MemberAccess(access, name), self.current_scope());
+                } else {
+                    let args = self.args()?;
+                    access = AstNode::new(Ast::Call(access, args), self.current_scope());
+                }
+            }
+
+            self.end_scope();
+
+            Ok(Some(access))
+        } else {
+            self.end_scope();
+
+            if is_in_expression {
+                return Err(ParseError::ExpectedTokenGot(
+                    vec![(TokenKind::Identifier, None)],
+                    self.current.clone().as_option(),
+                ));
+            }
+
+            Ok(None)
+        }
+    }
+
+    fn args(&mut self) -> ParseResult<Vec<AstNode>> {
+        let args = vec![];
+
+        self.expect(TokenKind::Open, Some("("))?;
+
+        self.expect(TokenKind::Close, Some(")"))?;
+
+        Ok(args)
+    }
+
+    // fn try_parse_statement()
+
+    // fn try_parse_expression()
+
+    fn block(&mut self) -> ParseResult<AstNode> {
         self.begin_scope();
         let mut bloc = vec![];
         let mut return_ = None;
@@ -573,26 +636,55 @@ impl Parser {
         self.expect(TokenKind::Open, Some(&"{"))?;
 
         loop {
-            if self.starts_statement()? {
+            self.begin_scope();
+
+            if let Some(access_expr) = self.beginning_statement_or_expression(false)? {
+                if self.accept(TokenKind::Equals, None)? {
+                    let expr = self.expression()?;
+
+                    bloc.push(AstNode::new(
+                        Ast::Assignment {
+                            pattern: access_expr,
+                            body: expr,
+                        },
+                        self.end_scope(),
+                    ));
+
+                    self.expect(TokenKind::Semicolon, None)?;
+                } else if self.accept(TokenKind::Semicolon, None)? {
+                    bloc.push(access_expr);
+                    self.end_scope();
+                    continue;
+                } else if self.is(TokenKind::Close, Some("}"))? {
+                    return_ = Some(access_expr);
+                    self.end_scope();
+                    break;
+                }
+            } else if self.starts_statement()? {
                 let statement = self.statement()?;
                 bloc.push(statement);
                 self.expect(TokenKind::Semicolon, None)?;
+                self.end_scope();
+                continue;
             } else if self.starts_expression()? {
                 let expression = self.expression()?;
 
                 if self.accept(TokenKind::Semicolon, None)? {
                     bloc.push(expression);
+                    self.end_scope();
                     continue;
                 } else {
                     return_ = Some(expression);
+                    self.end_scope();
                     break;
                 }
-            }
-
-            // i have *no* idea what i am doing
-            // - naki
-            if self.is(TokenKind::Close, Some(&"}"))? {
+            } else if self.is(TokenKind::Close, Some("}"))? {
+                self.end_scope();
                 break;
+            } else {
+                return Err(ParseError::UnexpectedToken(
+                    self.current.clone().as_option(),
+                ));
             }
         }
 

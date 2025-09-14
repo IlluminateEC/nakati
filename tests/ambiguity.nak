@@ -1,0 +1,8 @@
+fn main() = {
+    a.b();
+    a.b = 2;
+
+    let a = self.awa();
+
+    a
+};
