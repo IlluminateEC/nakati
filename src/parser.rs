@@ -429,13 +429,14 @@ impl Parser {
             Branch::of_kind(TokenKind::Identifier).then(&|this| {
                 // TODO: handle method calls
 
-                let name = this.current.as_ref().unwrap().content();
-                this.nom();
+                let access = this.beginning_statement_or_expression(true)?;
 
-                Ok(AstNode::new(
-                    Ast::VariableAccess(name),
-                    this.current_scope(),
-                ))
+                if let Some(access) = access {
+                    Ok(access)
+                } else {
+                    // apparently not actually used somehow.
+                    Err(ParseError::UnexpectedToken(this.next.clone().as_option()))
+                }
             }),
         ])
     }
@@ -571,10 +572,14 @@ impl Parser {
 
     /// does not consume anything unless the entire sequence matches
     /// TODO: this will probably consume a while loop's first line?
-    fn beginning_statement_or_expression(&mut self) -> Result<Option<AstNode>, ParseError> {
+    fn beginning_statement_or_expression(
+        &mut self,
+        is_in_expression: bool,
+    ) -> Result<Option<AstNode>, ParseError> {
         self.begin_scope();
 
         if self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Identifier, None) {
+            self.end_scope();
             return Ok(None);
         }
 
@@ -598,6 +603,14 @@ impl Parser {
             Ok(Some(access))
         } else {
             self.end_scope();
+
+            if is_in_expression {
+                return Err(ParseError::ExpectedTokenGot(
+                    vec![(TokenKind::Identifier, None)],
+                    self.current.clone().as_option(),
+                ));
+            }
+
             Ok(None)
         }
     }
@@ -626,7 +639,7 @@ impl Parser {
         loop {
             self.begin_scope();
 
-            if let Some(access_expr) = self.beginning_statement_or_expression()? {
+            if let Some(access_expr) = self.beginning_statement_or_expression(false)? {
                 if self.accept(TokenKind::Equals, None)? {
                     let expr = self.expression()?;
 

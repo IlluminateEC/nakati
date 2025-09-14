@@ -2,7 +2,7 @@ fn main() = {
     a.b();
     a.b = 2;
 
-    let a = b;
+    let a = self.awa();
 
     a
 };
