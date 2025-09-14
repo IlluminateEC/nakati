@@ -1,6 +1,8 @@
 use std::env::args;
 use std::process::exit;
 
+use nakati::ast::print_tree;
+
 fn main() {
     let filename = args().nth(1).unwrap_or("tests/1.nak".to_string());
 
@@ -15,5 +17,5 @@ fn main() {
         exit(1);
     }
 
-    println!("AST: {:#?}", program.unwrap());
+    print_tree(&program.unwrap());
 }
