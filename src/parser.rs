@@ -576,12 +576,11 @@ impl Parser {
         &mut self,
         is_in_expression: bool,
     ) -> Result<Option<AstNode>, ParseError> {
-        self.begin_scope();
-
         if self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Identifier, None) {
-            self.end_scope();
             return Ok(None);
         }
+
+        self.begin_scope();
 
         if self.is(TokenKind::Identifier, None)? {
             // todo: return None instead of Err
