@@ -38,7 +38,7 @@ impl Token {
 
     pub fn new_content(content: impl ToString, kind: TokenKind) -> Self {
         Self {
-            span: Span::new_string(content),
+            span: Span::new_string(content, "<internal value>"),
             kind,
         }
     }

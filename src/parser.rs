@@ -426,6 +426,11 @@ impl Parser {
             Branch::of_kind(TokenKind::Open)
                 .with_content(&"{")
                 .then(&Self::block),
+            Branch::of_kind(TokenKind::String).then(&|this| {
+                let content = this.current_string()?;
+
+                Ok(AstNode::new(Ast::String(content.value), content.span))
+            }),
             Branch::of_kind(TokenKind::Identifier).then(&|this| {
                 // TODO: handle method calls
 
@@ -561,7 +566,8 @@ impl Parser {
         // TODO: this
         Ok(self.is(TokenKind::Identifier, None)?
             || self.is(TokenKind::Integer, None)?
-            || self.is(TokenKind::Open, Some(&"{"))?)
+            || self.is(TokenKind::Open, Some(&"{"))?
+            || self.is(TokenKind::String, None)?)
     }
 
     fn starts_statement(&mut self) -> Result<bool, ParseError> {
@@ -615,9 +621,13 @@ impl Parser {
     }
 
     fn args(&mut self) -> ParseResult<Vec<AstNode>> {
-        let args = vec![];
+        let mut args = vec![];
 
         self.expect(TokenKind::Open, Some("("))?;
+
+        if !self.is(TokenKind::Close, Some(")"))? {
+            args.push(self.expression()?);
+        }
 
         self.expect(TokenKind::Close, Some(")"))?;
 

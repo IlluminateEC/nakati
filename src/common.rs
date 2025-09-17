@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     ops::{FromResidual, Try},
-    rc::Rc,
+    sync::Arc,
 };
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,18 +13,18 @@ pub struct Source {
 }
 
 impl Source {
-    pub fn new(name: impl ToString, body: impl ToString) -> Rc<Self> {
+    pub fn new(name: impl ToString, body: impl ToString) -> Arc<Self> {
         let new_body = body.to_string();
         let graphemes = new_body.graphemes(true).map(|g| g.to_string()).collect();
 
-        Rc::new(Self {
+        Arc::new(Self {
             name: name.to_string(),
             body: new_body,
             graphemes,
         })
     }
 
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Rc<Self> {
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Arc<Self> {
         // TODO: error handling
 
         let content = std::fs::read_to_string(path.as_ref());
@@ -41,7 +41,7 @@ impl Debug for Source {
 
 #[derive(Clone)]
 pub struct Span {
-    source: Rc<Source>,
+    source: Arc<Source>,
 
     start: usize,
     start_line: usize,
@@ -55,7 +55,7 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn new(source: Rc<Source>) -> Self {
+    pub fn new(source: Arc<Source>) -> Self {
         Self {
             source,
 
@@ -71,8 +71,8 @@ impl Span {
         }
     }
 
-    pub fn new_string(string: impl ToString) -> Self {
-        let source = Source::new("<internal value>", string);
+    pub fn new_string(string: impl ToString, filename: &'static str) -> Self {
+        let source = Source::new(filename, string);
 
         let end = source.body.len();
         let end_column = source.body.len();

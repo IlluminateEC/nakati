@@ -95,6 +95,10 @@ impl<T> BoxSpanned<T> {
     pub fn new(value: T, span: Span) -> Self {
         Self(Spanned::new(Box::new(value), span))
     }
+
+    pub fn span(&self) -> Span {
+        self.0.span.clone()
+    }
 }
 
 impl<T> Deref for BoxSpanned<T> {

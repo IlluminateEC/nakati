@@ -1,7 +1,8 @@
 use std::env::args;
 use std::process::exit;
 
-use nakati::ast::print_tree;
+use nakati::interpreter::Interpreter;
+use nakati::resolver::ModuleLabel;
 
 fn main() {
     let filename = args().nth(1).unwrap_or("tests/1.nak".to_string());
@@ -17,5 +18,5 @@ fn main() {
         exit(1);
     }
 
-    print_tree(&program.unwrap());
+    Interpreter::interpret(program.unwrap(), ModuleLabel::from_special("main")).unwrap();
 }

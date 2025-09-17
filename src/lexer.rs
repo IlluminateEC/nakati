@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::common::{OpRes, OptionalResult, Source, Span};
 use crate::token::{Token, TokenKind};
@@ -13,7 +13,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(source: Rc<Source>) -> Self {
+    pub fn new(source: Arc<Source>) -> Self {
         Self {
             span: Span::new(source),
         }

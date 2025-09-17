@@ -1,0 +1,32 @@
+// import Out from "@nakati/io";
+
+fn identity(value: T) = value;
+
+fn main() {
+    print("Hello, world!");
+    print(1);
+
+    print("the value of a is:");
+    let a = 73;
+
+    // sadly, I haven't implemented mathematical operators yet so
+    // print(2 + 2); // gives an error
+
+    print(a);
+
+    print(something_else());
+
+    print(another_thing());
+
+    print(identity(73000));
+}
+
+// print outside of main should be invalid, too
+// print(123);
+
+// WOW, I did not expect that to work tbh
+pub fn something_else() = 123;
+pub fn another_thing() = something_else();
+
+// TODO: delay evaluation of statics until after functions have been defined
+pub static should_break: u32 = something_else();
