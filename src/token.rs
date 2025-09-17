@@ -14,6 +14,8 @@ pub enum TokenKind {
     Operator,
     Dot,
     Comma,
+    Strudel,
+    Ellipsis,
 
     Open,
     Close,

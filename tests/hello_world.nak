@@ -1,4 +1,6 @@
-// import Out from "@nakati/io";
+// import Out from "#io";
+
+import @io from "#io";
 
 fn identity(value: T) = value;
 
@@ -6,13 +8,14 @@ fn main() {
     print("Hello, world!");
     print(1);
 
-    print("the value of a is:");
     let a = 73;
+    print("the value of a is:", a);
+
+    print("the answer to life and everything is:", io.life);
 
     // sadly, I haven't implemented mathematical operators yet so
     // print(2 + 2); // gives an error
 
-    print(a);
 
     print(something_else());
 

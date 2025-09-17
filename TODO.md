@@ -3,3 +3,4 @@
 - figure out semantics for primitives being referenced by a closure
 - write the error system
 - builtins should probably be handled by the import system
+- variadic functions?

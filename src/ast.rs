@@ -13,6 +13,7 @@ pub enum Ast {
     Import {
         names: Vec<(SString, Option<SString>)>,
         module: SString,
+        module_alias: Option<SString>,
     },
     Static {
         public: bool,
@@ -45,6 +46,7 @@ pub enum Ast {
         args: Vec<(String, AstNode)>,
         return_type: Option<AstNode>,
         body: AstNode,
+        variadic: bool,
     },
 
     TypeName(String),
@@ -159,7 +161,11 @@ fn print_tree_internal(node: &AstNode, depth: usize) {
                 print_tree_internal(&node, depth + 1);
             }
         }
-        Ast::Import { names, module } => {
+        Ast::Import {
+            names,
+            module,
+            module_alias,
+        } => {
             print_node("Import", depth);
 
             print_category("name", depth + 1);
@@ -169,6 +175,7 @@ fn print_tree_internal(node: &AstNode, depth: usize) {
                 print_labeled("alias", name.1.map(|v| v.value), depth + 2);
             }
 
+            print_labeled("module alias", module_alias.map(|v| v.value), depth + 1);
             print_labeled("from", module.value, depth + 1);
         }
         Ast::Static {
@@ -224,6 +231,7 @@ fn print_tree_internal(node: &AstNode, depth: usize) {
             args,
             return_type,
             body,
+            variadic,
         } => {
             print_node_with_value("Function", name.value, depth);
             print_labeled("public", public, depth + 1);
@@ -242,6 +250,8 @@ fn print_tree_internal(node: &AstNode, depth: usize) {
             } else {
                 print_indented("None", depth + 2);
             }
+
+            print_labeled("variadic", variadic, depth + 1);
 
             print_tree_internal(&body, depth + 1);
         }

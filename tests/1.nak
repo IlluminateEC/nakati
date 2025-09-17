@@ -1,5 +1,5 @@
-import Out from "@nakati/io";
-// import Example from "@naki.dev/example";
+import Out from "@nakati//io";
+// import Example from "@naki.dev//example";
 // pub static example: Example = Example.new();
 
 pub static example: u8 = 1;

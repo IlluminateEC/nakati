@@ -123,6 +123,8 @@ impl Parser {
     fn begin_scope(&mut self) {
         if let Some(current_span) = self.current_span() {
             self.push_span(current_span);
+        } else {
+            self.push_span(self.lexer.get_span());
         }
     }
 
@@ -354,7 +356,7 @@ impl Parser {
         let name = self.current_identifier()?;
         let mut alias = None;
 
-        if self.accept(TokenKind::Identifier, Some(&"as"))? {
+        if self.accept(TokenKind::Identifier, Some("as"))? {
             alias = Some(self.current_identifier()?);
         }
 
@@ -364,22 +366,35 @@ impl Parser {
     fn import_statement(&mut self) -> Result<AstNode, ParseError> {
         self.expect(TokenKind::Identifier, Some("import"))?;
 
-        let mut names = vec![];
+        let mut module_alias = None;
 
-        names.push(self.import_symbol_and_alias()?);
-
-        while self.accept(TokenKind::Comma, None)? {
-            names.push(self.import_symbol_and_alias()?);
+        if self.accept(TokenKind::Strudel, None)? {
+            module_alias = Some(self.current_identifier()?);
         }
 
-        self.expect(TokenKind::Identifier, Some(&"from"))?;
+        let mut names = vec![];
+
+        if module_alias.is_some() && self.accept(TokenKind::Comma, None)? || module_alias.is_none()
+        {
+            names.push(self.import_symbol_and_alias()?);
+
+            while self.accept(TokenKind::Comma, None)? {
+                names.push(self.import_symbol_and_alias()?);
+            }
+        }
+
+        self.expect(TokenKind::Identifier, Some("from"))?;
 
         let module = self.current_string()?;
 
         self.expect(TokenKind::Semicolon, None)?;
 
         Ok(AstNode::new(
-            Ast::Import { names, module },
+            Ast::Import {
+                module_alias,
+                names,
+                module,
+            },
             self.current_scope(),
         ))
     }
@@ -424,7 +439,7 @@ impl Parser {
                 Ok(AstNode::new(Ast::Integer(value), this.current_scope()))
             }),
             Branch::of_kind(TokenKind::Open)
-                .with_content(&"{")
+                .with_content("{")
                 .then(&Self::block),
             Branch::of_kind(TokenKind::String).then(&|this| {
                 let content = this.current_string()?;
@@ -466,7 +481,7 @@ impl Parser {
                     ))
                 }),
             Branch::of_kind(TokenKind::Identifier)
-                .with_content(&"let")
+                .with_content("let")
                 .consume()
                 .then(&|this| {
                     let name = this.current_identifier()?;
@@ -520,11 +535,11 @@ impl Parser {
 
         // TODO: inheritance, implements
 
-        self.expect(TokenKind::Open, Some(&"{"))?;
+        self.expect(TokenKind::Open, Some("{"))?;
 
         // TODO: handle the body
 
-        self.expect(TokenKind::Close, Some(&"}"))?;
+        self.expect(TokenKind::Close, Some("}"))?;
 
         Ok(AstNode::new(
             Ast::Class {
@@ -542,10 +557,11 @@ impl Parser {
         Ok((name.content(), type_))
     }
 
-    fn function_arguments(&mut self) -> Result<Vec<(String, AstNode)>, ParseError> {
-        self.expect(TokenKind::Open, Some(&"("))?;
+    fn function_arguments(&mut self) -> Result<(Vec<(String, AstNode)>, bool), ParseError> {
+        self.expect(TokenKind::Open, Some("("))?;
 
         let mut args = vec![];
+        let mut variadic = false;
 
         if let Some(name) = self.accept_option(TokenKind::Identifier, None)? {
             args.push(self.function_argument(name)?);
@@ -557,22 +573,29 @@ impl Parser {
             args.push(self.function_argument(name)?);
         }
 
-        self.expect(TokenKind::Close, Some(&")"))?;
+        if self.accept(TokenKind::Ellipsis, None)? {
+            let name = self.expect(TokenKind::Identifier, None)?;
 
-        Ok(args)
+            args.push(self.function_argument(name)?);
+            variadic = true;
+        }
+
+        self.expect(TokenKind::Close, Some(")"))?;
+
+        Ok((args, variadic))
     }
 
     fn starts_expression(&mut self) -> Result<bool, ParseError> {
         // TODO: this
         Ok(self.is(TokenKind::Identifier, None)?
             || self.is(TokenKind::Integer, None)?
-            || self.is(TokenKind::Open, Some(&"{"))?
+            || self.is(TokenKind::Open, Some("{"))?
             || self.is(TokenKind::String, None)?)
     }
 
     fn starts_statement(&mut self) -> Result<bool, ParseError> {
         // TODO: this
-        Ok(self.is(TokenKind::Identifier, Some(&"let"))?
+        Ok(self.is(TokenKind::Identifier, Some("let"))?
             || (self.is(TokenKind::Identifier, None)? && self.next_is(TokenKind::Equals, None)))
     }
 
@@ -627,7 +650,13 @@ impl Parser {
 
         if !self.is(TokenKind::Close, Some(")"))? {
             args.push(self.expression()?);
+
+            while self.accept(TokenKind::Comma, None)? {
+                args.push(self.expression()?);
+            }
         }
+
+        // TODO: handle arg spreading
 
         self.expect(TokenKind::Close, Some(")"))?;
 
@@ -643,7 +672,7 @@ impl Parser {
         let mut bloc = vec![];
         let mut return_ = None;
 
-        self.expect(TokenKind::Open, Some(&"{"))?;
+        self.expect(TokenKind::Open, Some("{"))?;
 
         loop {
             self.begin_scope();
@@ -698,7 +727,7 @@ impl Parser {
             }
         }
 
-        self.expect(TokenKind::Close, Some(&"}"))?;
+        self.expect(TokenKind::Close, Some("}"))?;
 
         Ok(AstNode::new(
             Ast::Block {
@@ -729,7 +758,7 @@ impl Parser {
                 Ok(a)
             }),
             Branch::of_kind(TokenKind::Open)
-                .with_content(&"{")
+                .with_content("{")
                 .then(&Self::block),
         ])?;
 
@@ -737,9 +766,10 @@ impl Parser {
             Ast::Function {
                 public: is_public,
                 name,
-                args,
+                args: args.0,
                 return_type,
                 body,
+                variadic: args.1,
             },
             self.end_scope(),
         ))

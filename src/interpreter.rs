@@ -10,8 +10,8 @@ use std::{
 use crate::{
     ast::{Ast, AstNode},
     common::Span,
+    module::{ImportPool, ModuleLabel},
     parser::ParseError,
-    resolver::{ImportPool, ModuleLabel},
 };
 
 #[derive(Clone)]
@@ -45,10 +45,53 @@ pub enum Value {
     Float(f64),
     String(String),
     Boolean(bool),
-    Class(),
-    Instance(),
+    Class(Arc<Class>),
+    Instance(Arc<Instance>),
     Function(Function),
+    Module(Module),
     None,
+}
+
+#[derive(Debug, Clone)]
+pub struct Module {
+    name: String,
+    scope: Arc<Scope>,
+}
+
+impl PartialEq for Module {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.scope, &other.scope)
+    }
+}
+
+// TODO: inheritance, interfaces
+#[derive(Debug, Clone)]
+pub struct Class {
+    name: String,
+    fields: HashMap<String, Value>,
+    span: Span,
+    scope: Arc<Scope>,
+}
+
+impl PartialEq for Class {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.fields == other.fields
+            && self.span == other.span
+            && Arc::ptr_eq(&self.scope, &other.scope)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Instance {
+    class: Arc<Class>,
+    fields: HashMap<String, Value>,
+}
+
+impl PartialEq for Instance {
+    fn eq(&self, other: &Self) -> bool {
+        self.class == other.class && self.fields == other.fields
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +103,7 @@ pub struct Function {
     body: FunctionBody,
     span: Span,
     scope: Arc<Scope>,
+    variadic: bool,
 }
 
 impl PartialEq for Function {
@@ -84,6 +128,13 @@ impl Display for Value {
             Self::String(value) => f.write_fmt(format_args!("{}", value)),
             Self::Integer(value) => f.write_fmt(format_args!("{}", value)),
 
+            Self::Class(value) => f.write_fmt(format_args!("<class {:?}>", value.name)),
+            Self::Instance(value) => f.write_fmt(format_args!(
+                "<{:?} at {:x}>",
+                value.class.name,
+                value.as_ref() as *const Instance as usize
+            )),
+
             _ => todo!("{:?}", self),
         }
     }
@@ -106,9 +157,9 @@ impl Scope {
         })
     }
 
-    pub fn get(&self, key: impl ToString) -> Option<Value> {
-        if let Some(value) = self.pairs.read().unwrap().get(&key.to_string()) {
-            return Some(value.to_owned());
+    pub fn get<'a>(&'a self, key: impl AsRef<str>) -> Option<&'a Value> {
+        if let Some(value) = self.pairs.read().unwrap().get(key.as_ref()) {
+            return Some(unsafe { std::mem::transmute(value) });
         }
 
         if let Some(parent) = &self.parent {
@@ -148,6 +199,16 @@ impl Scope {
         Ok(())
     }
 
+    pub fn has(&self, key: &String) -> bool {
+        if self.pairs.read().unwrap().contains_key(key) {
+            true
+        } else if let Some(parent) = &self.parent {
+            parent.has(key)
+        } else {
+            false
+        }
+    }
+
     fn update_internal(&self, key: String, value: Value) -> bool {
         // Assume parent scopes are also frozen.
         if self.frozen.load(Ordering::Relaxed) {
@@ -168,7 +229,7 @@ impl Scope {
     }
 
     pub fn freeze(&self) {
-        self.frozen.store(true, Ordering::Acquire);
+        self.frozen.store(true, Ordering::SeqCst);
     }
 }
 
@@ -181,6 +242,7 @@ pub enum InterpreterError {
     // TODO: add spans
     MutabilityError(String),
     SyntaxError(ParseError),
+    InvalidImport(String, Span),
 }
 
 impl From<ParseError> for InterpreterError {
@@ -199,10 +261,7 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn interpret(ast: AstNode, label: ModuleLabel) -> Result<Value, InterpreterError> {
-        let pool = ImportPool::new();
-        pool.set("<builtins>".to_string(), Self::make_builtins());
-
-        let scope = Self::evaluate_module(ast, label, pool)?;
+        let scope = Self::evaluate_module(ast, label, Self::make_default_imports())?;
 
         // TODO: return return value of main
         Ok(Value::None)
@@ -232,11 +291,32 @@ impl Interpreter {
         Ok(scope)
     }
 
+    fn make_default_imports() -> ImportPool {
+        let pool = ImportPool::new();
+
+        pool.set("<builtins>".to_string(), Self::make_builtins());
+        pool.set("@nakati//std:io".to_string(), {
+            let io = Scope::new(pool.get(&"<builtins>".to_string()));
+
+            io.define("life", Value::Integer(42)).unwrap();
+
+            // io.define("OStream", Value::Class(Arc::new()))
+
+            // io.define("Out", Value::Instance())?;
+
+            // TODO: Err
+            // TODO: In
+
+            io
+        });
+
+        pool
+    }
+
     fn make_builtins() -> Arc<Scope> {
         let builtins = Scope::new(None);
 
         let print_span = Span::new_string("pub fn print() { ... }", "<builtins>");
-        let print_span_clone = print_span.clone();
         builtins
             .define(
                 "print",
@@ -249,19 +329,25 @@ impl Interpreter {
                             println!();
                         }
 
-                        if values.len() != 1 {
-                            return Err(InterpreterError::ArgumentError(
-                                format!("print takes 1 argument but {} were given", values.len()),
-                                print_span_clone.clone(),
-                            ));
-                        }
+                        if values.len() == 1 {
+                            let value = values[0].clone();
+                            println!("{}", value);
+                            Ok(value)
+                        } else {
+                            let joined = values
+                                .iter()
+                                .map(|v| format!("{}", v))
+                                .intersperse(" ".to_string())
+                                .collect::<String>();
 
-                        let value = values[0].clone();
-                        println!("{}", value);
-                        Ok(value)
+                            println!("{}", joined);
+
+                            Ok(Value::None)
+                        }
                     })),
                     span: print_span,
                     scope: builtins.clone(),
+                    variadic: true,
                 }),
             )
             .unwrap();
@@ -286,7 +372,7 @@ impl Interpreter {
 
     fn call_function(
         &mut self,
-        value: Value,
+        value: &Value,
         args: Vec<Value>,
         name: Option<String>,
         span: Option<Span>,
@@ -296,13 +382,34 @@ impl Interpreter {
                 body,
                 args: params,
                 scope,
+                variadic,
                 ..
             }) => match body {
                 FunctionBody::Ast(ast) => {
-                    self.scope_stack.push(scope);
+                    if args.len() != params.len() && !variadic {
+                        return Err(InterpreterError::ArgumentError(
+                            format!(
+                                "{} takes {} {} but {} {} given",
+                                value,
+                                params.len(),
+                                if params.len() == 1 {
+                                    "argument"
+                                } else {
+                                    "arguments"
+                                },
+                                args.len(),
+                                if args.len() == 1 { "was" } else { "were" },
+                            ),
+                            span.unwrap(),
+                        ));
+                    }
+
+                    self.scope_stack.push(scope.clone());
                     self.begin_scope();
 
                     let scope = self.current_scope();
+
+                    // TODO: if arg is variadic and arg count > param count, collect them into a list and pass as the last argument
 
                     for (arg, param) in args.into_iter().zip(params.iter().map(|p| p.0.clone())) {
                         scope.define(param, arg)?;
@@ -355,8 +462,8 @@ impl Interpreter {
                     self.interpret_internal(node)?;
                 }
 
-                if let Some(main) = self.current_scope().get("main") {
-                    self.call_function(main, vec![], Some("main".to_string()), None)
+                if let Some(main) = self.current_scope().get("main").cloned() {
+                    self.call_function(&main, vec![], Some("main".to_string()), None)
                 } else {
                     Ok(Value::None)
                 }
@@ -397,6 +504,7 @@ impl Interpreter {
                 args,
                 return_type: _,
                 body,
+                variadic,
             } => {
                 let scope = self.current_scope();
 
@@ -412,6 +520,7 @@ impl Interpreter {
                         body: FunctionBody::Ast(Arc::new(body.clone())),
                         span: ast.span(),
                         scope: scope.clone(),
+                        variadic: *variadic,
                     }),
                 )?;
 
@@ -421,12 +530,14 @@ impl Interpreter {
                 let function = self.interpret_internal(fn_access)?;
 
                 let mut evaluated_args = vec![];
+                let mut span = fn_access.span();
 
                 for arg in args {
+                    span.fit(&arg.span());
                     evaluated_args.push(self.interpret_internal(arg)?);
                 }
 
-                self.call_function(function, evaluated_args, None, Some(fn_access.span()))
+                self.call_function(&function, evaluated_args, None, Some(span))
             }
             Ast::Block {
                 statements,
@@ -445,8 +556,9 @@ impl Interpreter {
             Ast::Import {
                 names,
                 module: module_name,
+                module_alias,
             } => {
-                let resolver = ModuleLabel::parse(module_name.clone());
+                let resolver = ModuleLabel::parse(module_name.clone())?;
                 let module = resolver.resolve(self.module_pool.clone(), self.label.clone())?;
 
                 for (import, alias) in names {
@@ -464,8 +576,20 @@ impl Interpreter {
 
                     self.current_scope().define(
                         alias.as_ref().unwrap_or(import).value.clone(),
-                        value.unwrap(),
-                    );
+                        value.unwrap().to_owned(),
+                    )?;
+                }
+
+                let label = self.label.clone();
+
+                if let Some(module_alias) = module_alias {
+                    self.current_scope().define(
+                        &module_alias.value,
+                        Value::Module(Module {
+                            name: resolver.absolute(label),
+                            scope: module,
+                        }),
+                    )?;
                 }
 
                 Ok(Value::None)
@@ -473,12 +597,47 @@ impl Interpreter {
 
             Ast::VariableAccess(name) => {
                 if let Some(value) = self.current_scope().get(name) {
-                    Ok(value)
+                    Ok(value.to_owned())
                 } else {
                     Err(InterpreterError::UndefinedVariable(
                         name.clone(),
                         ast.span(),
                     ))
+                }
+            }
+            Ast::MemberAccess(mapping, name) => {
+                let mapping_object = self.interpret_internal(mapping)?;
+
+                match mapping_object {
+                    Value::Instance(_) => {
+                        todo!();
+                    }
+                    Value::Class(_) => {
+                        todo!("accessing class members");
+                    }
+                    Value::Module(module) => {
+                        if let Some(value) = module.scope.get(&name.value) {
+                            Ok(value.to_owned())
+                        } else {
+                            Err(InterpreterError::UndefinedVariable(
+                                format!(
+                                    "Cannot access member variable {:?} of {:?} as it does not exist",
+                                    &name.value,
+                                    Value::Module(module)
+                                ),
+                                name.span.clone(),
+                            ))
+                        }
+                    }
+
+                    value => Err(InterpreterError::TypeError(
+                        format!(
+                            "Cannot access field {:?} on {:?}",
+                            name.value.clone(),
+                            value
+                        ),
+                        name.span.clone(),
+                    )),
                 }
             }
 

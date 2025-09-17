@@ -2,7 +2,7 @@ use std::env::args;
 use std::process::exit;
 
 use nakati::interpreter::Interpreter;
-use nakati::resolver::ModuleLabel;
+use nakati::module::ModuleLabel;
 
 fn main() {
     let filename = args().nth(1).unwrap_or("tests/1.nak".to_string());

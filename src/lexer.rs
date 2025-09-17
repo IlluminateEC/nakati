@@ -124,6 +124,9 @@ impl Lexer {
         } else if self.at(";") {
             self.span.bump_cur();
             Token::new(&self.span, TokenKind::Semicolon)
+        } else if self.at("...") {
+            self.span.bump("...");
+            Token::new(&self.span, TokenKind::Ellipsis)
         } else if self.at(".") {
             self.span.bump_cur();
             Token::new(&self.span, TokenKind::Dot)
@@ -133,6 +136,9 @@ impl Lexer {
         } else if self.at(":") {
             self.span.bump_cur();
             Token::new(&self.span, TokenKind::Colon)
+        } else if self.at("@") {
+            self.span.bump_cur();
+            Token::new(&self.span, TokenKind::Strudel)
         } else if self.at_any(&["+", "-", "/", "*"]) {
             self.span.bump_cur();
             Token::new(&self.span, TokenKind::Operator)
@@ -145,5 +151,9 @@ impl Lexer {
         } else {
             OpRes::Err(LexError::UnexpectedCharacter(self.span.cur().unwrap()))?
         })
+    }
+
+    pub fn get_span(&self) -> Span {
+        self.span.clone()
     }
 }

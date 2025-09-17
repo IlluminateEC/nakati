@@ -187,6 +187,11 @@ impl Span {
             self.end_grapheme = other.end_grapheme;
         }
     }
+
+    pub fn fitted(mut self, other: &Self) -> Self {
+        self.fit(other);
+        self
+    }
 }
 
 impl PartialEq for Span {
