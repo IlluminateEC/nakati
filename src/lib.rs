@@ -8,5 +8,6 @@ pub mod interpreter;
 pub mod lexer;
 pub mod module;
 pub mod parser;
+pub mod source;
 pub mod token;
-pub mod types;
+// pub mod types;

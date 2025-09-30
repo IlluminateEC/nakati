@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
-use crate::common::{OpRes, OptionalResult, Source, Span};
+use crate::common::{OpRes, OptionalResult, Span, Window};
+use crate::source::SourceId;
 use crate::token::{Token, TokenKind};
 
 #[derive(Debug, Clone)]
@@ -9,13 +8,13 @@ pub enum LexError {
 }
 
 pub struct Lexer {
-    span: Span,
+    window: Window,
 }
 
 impl Lexer {
-    pub fn new(source: Arc<Source>) -> Self {
+    pub fn new(source: SourceId) -> Self {
         Self {
-            span: Span::new(source),
+            window: Window::new(source),
         }
     }
 
@@ -40,11 +39,11 @@ impl Lexer {
     }
 
     fn at(&self, target: &str) -> bool {
-        self.span.has(target)
+        self.window.has(target)
     }
 
     fn at_any(&self, targets: &[&str]) -> bool {
-        if let Some(cur) = self.span.cur() {
+        if let Some(cur) = self.window.cur() {
             for target in targets {
                 if target == cur {
                     return true;
@@ -57,26 +56,26 @@ impl Lexer {
 
     #[inline]
     fn discard_ignorables(&mut self) {
-        let mut old_span = self.span.clone();
+        let mut old_span = self.window.make();
         let mut changed = true;
 
         while changed {
-            self.span.skip_while(Self::is_whitespace);
+            self.window.skip_while(Self::is_whitespace);
 
-            if self.span.has("//") {
-                self.span.bump("//");
-                self.span.skip_while(|g| !g.contains('\n'));
+            if self.window.has("//") {
+                self.window.bump("//");
+                self.window.skip_while(|g| !g.contains('\n'));
             }
 
-            changed = self.span != old_span;
-            old_span = self.span.clone();
+            changed = self.window.make() != old_span;
+            old_span = self.window.make();
         }
     }
 
     pub fn next_token(&mut self) -> OptionalResult<Token, LexError> {
         self.discard_ignorables();
 
-        let g = self.span.cur();
+        let g = self.window.cur();
 
         if g.is_none() {
             return OpRes::None;
@@ -85,75 +84,75 @@ impl Lexer {
         let g = g.unwrap();
 
         OpRes::Ok(if Self::is_alphabetic(g) {
-            self.span.bump_while(Self::is_alphanumeric);
+            self.window.bump_while(Self::is_alphanumeric);
 
-            let content = &self.span.content();
+            let content = &self.window.content();
 
             if content == &"true" || content == &"false" {
-                Token::new(&self.span, TokenKind::Boolean)
+                Token::new(&self.window.make(), TokenKind::Boolean)
             } else {
-                Token::new(&self.span, TokenKind::Identifier)
+                Token::new(&self.window.make(), TokenKind::Identifier)
             }
         } else if Self::is_digit(g) {
-            self.span.bump_while(Self::is_digit);
+            self.window.bump_while(Self::is_digit);
 
             if self.at(".") {
-                self.span.bump(self.span.cur().unwrap());
-                self.span.bump_while(Self::is_digit);
+                self.window.bump(self.window.cur().unwrap());
+                self.window.bump_while(Self::is_digit);
 
-                Token::new(&self.span, TokenKind::Float)
+                Token::new(&self.window.make(), TokenKind::Float)
             } else {
-                Token::new(&self.span, TokenKind::Integer)
+                Token::new(&self.window.make(), TokenKind::Integer)
             }
         } else if self.at("\"") {
             // TODO: handle escaping
-            self.span.bump_cur();
-            self.span.release(); // skip beginning quote
-            self.span.bump_while(|g| g != "\"");
+            self.window.bump_cur();
+            self.window.release(); // skip beginning quote
+            self.window.bump_while(|g| g != "\"");
 
-            let span = self.span.clone();
-            self.span.bump_cur(); // skip end quote
+            let span = self.window.make();
+            self.window.bump_cur(); // skip end quote
 
             Token::new(&span, TokenKind::String)
         } else if self.at("=>") {
-            self.span.bump("=>");
-            Token::new(&self.span, TokenKind::ThickArrow)
+            self.window.bump("=>");
+            Token::new(&self.window.make(), TokenKind::ThickArrow)
         } else if self.at("=") {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Equals)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Equals)
         } else if self.at(";") {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Semicolon)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Semicolon)
         } else if self.at("...") {
-            self.span.bump("...");
-            Token::new(&self.span, TokenKind::Ellipsis)
+            self.window.bump("...");
+            Token::new(&self.window.make(), TokenKind::Ellipsis)
         } else if self.at(".") {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Dot)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Dot)
         } else if self.at(",") {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Comma)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Comma)
         } else if self.at(":") {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Colon)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Colon)
         } else if self.at("@") {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Strudel)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Strudel)
         } else if self.at_any(&["+", "-", "/", "*"]) {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Operator)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Operator)
         } else if self.at_any(&["(", "{", "["]) {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Open)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Open)
         } else if self.at_any(&[")", "}", "]"]) {
-            self.span.bump_cur();
-            Token::new(&self.span, TokenKind::Close)
+            self.window.bump_cur();
+            Token::new(&self.window.make(), TokenKind::Close)
         } else {
-            OpRes::Err(LexError::UnexpectedCharacter(self.span.cur().unwrap()))?
+            OpRes::Err(LexError::UnexpectedCharacter(self.window.cur().unwrap()))?
         })
     }
 
     pub fn get_span(&self) -> Span {
-        self.span.clone()
+        self.window.make()
     }
 }

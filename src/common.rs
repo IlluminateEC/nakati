@@ -1,47 +1,15 @@
 use std::{
     fmt::Debug,
     ops::{FromResidual, Try},
-    sync::Arc,
 };
 
 use unicode_segmentation::UnicodeSegmentation;
 
-pub struct Source {
-    pub name: String,
-    pub body: String,
-    pub graphemes: Vec<String>,
-}
+use crate::source::{SOURCES, Source, SourceId};
 
-impl Source {
-    pub fn new(name: impl ToString, body: impl ToString) -> Arc<Self> {
-        let new_body = body.to_string();
-        let graphemes = new_body.graphemes(true).map(|g| g.to_string()).collect();
-
-        Arc::new(Self {
-            name: name.to_string(),
-            body: new_body,
-            graphemes,
-        })
-    }
-
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Arc<Self> {
-        // TODO: error handling
-
-        let content = std::fs::read_to_string(path.as_ref());
-
-        Self::new(path.as_ref().to_str().unwrap(), content.unwrap())
-    }
-}
-
-impl Debug for Source {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("<Source name={:?}>", self.name))
-    }
-}
-
-#[derive(Clone)]
-pub struct Span {
-    source: Arc<Source>,
+pub struct Window {
+    source_id: SourceId,
+    source: &'static Source,
 
     start: usize,
     start_line: usize,
@@ -54,10 +22,11 @@ pub struct Span {
     end_grapheme: usize,
 }
 
-impl Span {
-    pub fn new(source: Arc<Source>) -> Self {
+impl Window {
+    pub fn new(source: SourceId) -> Self {
         Self {
-            source,
+            source_id: source,
+            source: source.get(),
 
             start: 0,
             start_column: 0,
@@ -65,32 +34,14 @@ impl Span {
             start_grapheme: 0,
 
             end: 0,
-            end_column: 0,
             end_line: 0,
+            end_column: 0,
             end_grapheme: 0,
         }
     }
 
-    pub fn new_string(string: impl ToString, filename: &'static str) -> Self {
-        let source = Source::new(filename, string);
-
-        let end = source.body.len();
-        let end_column = source.body.len();
-        let end_grapheme = source.graphemes.len();
-
-        Self {
-            source,
-
-            start: 0,
-            start_column: 0,
-            start_line: 0,
-            start_grapheme: 0,
-
-            end,
-            end_column,
-            end_line: 0,
-            end_grapheme,
-        }
+    pub fn content(&self) -> &str {
+        &self.source.body[self.start..self.end]
     }
 
     pub fn bump(&mut self, value: impl AsRef<str>) {
@@ -117,10 +68,6 @@ impl Span {
         self.start_column = self.end_column;
         self.start_line = self.end_line;
         self.start_grapheme = self.end_grapheme;
-    }
-
-    pub fn content(&self) -> &str {
-        &self.source.body[self.start..self.end]
     }
 
     pub fn cur(&self) -> Option<&'static String> {
@@ -172,6 +119,67 @@ impl Span {
         true
     }
 
+    pub fn make(&self) -> Span {
+        Span {
+            source: self.source_id,
+            start: self.start,
+            start_line: self.start_line,
+            start_column: self.start_column,
+            start_grapheme: self.start_grapheme,
+            end: self.end,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Span {
+    source: SourceId,
+
+    start: usize,
+    start_line: usize,
+    start_column: usize,
+    start_grapheme: usize,
+
+    end: usize,
+}
+
+impl Span {
+    pub fn new(source: SourceId) -> Self {
+        Self {
+            source,
+
+            start: 0,
+            start_column: 0,
+            start_line: 0,
+            start_grapheme: 0,
+
+            end: 0,
+        }
+    }
+
+    pub fn new_string(string: impl ToString, filename: &'static str) -> Self {
+        // TODO: don't polute Source system with these.
+
+        let source = Source::new(filename, string);
+        let end = source.body.len();
+        let source_id = SOURCES.add(source);
+
+        Self {
+            source: source_id,
+
+            start: 0,
+            start_column: 0,
+            start_line: 0,
+            start_grapheme: 0,
+
+            end,
+        }
+    }
+
+    pub fn content(&self) -> &str {
+        &self.source.get().body[self.start..self.end]
+    }
+
     pub fn fit(&mut self, other: &Self) {
         if other.start < self.start {
             self.start = other.start;
@@ -182,9 +190,6 @@ impl Span {
 
         if other.end > self.end {
             self.end = other.end;
-            self.end_line = other.end_line;
-            self.end_column = other.end_column;
-            self.end_grapheme = other.end_grapheme;
         }
     }
 
@@ -201,9 +206,6 @@ impl PartialEq for Span {
             && self.start_column == other.start_column
             && self.start_grapheme == other.start_grapheme
             && self.end == other.end
-            && self.end_line == other.end_line
-            && self.end_column == other.end_column
-            && self.end_grapheme == other.end_grapheme
     }
 }
 

@@ -6,10 +6,10 @@ use std::{
 
 use crate::{
     ast::Spanned,
-    common::Source,
     interpreter::{Interpreter, InterpreterError, Scope},
     lexer::Lexer,
     parser::Parser,
+    source::Source,
 };
 
 #[derive(Clone)]
@@ -248,8 +248,8 @@ impl ModuleLabel {
         }
 
         let path = self.to_path(context);
-        let source = Source::from_path(path);
-        let lexer = Lexer::new(source);
+        let source_id = Source::from_path(path).register();
+        let lexer = Lexer::new(source_id);
         let mut parser = Parser::new(lexer);
         let ast = parser.parse()?;
 
