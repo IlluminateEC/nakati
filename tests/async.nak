@@ -1,0 +1,13 @@
+// I dunno, I'd need to research effects a bit more.
+effect Await[$T] = () -> $T;
+
+class Async {
+    fn withAsync[$T, $F: () => $T effects Await](function: $F) {
+        handle
+            Await with (resume) => {
+                
+            },
+        in
+            function()
+    };
+}

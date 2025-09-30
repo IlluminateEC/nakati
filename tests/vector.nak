@@ -1,0 +1,76 @@
+// `a intersects b` means that a shares some discrete values with b
+// `a subtype b` means that a shares all of its values with b
+
+// due to a lack of an implementation for when the index
+// neither intersects or is a subtype of L, it should give a type error
+// when you try to index out-of-bounds (thus, also if the array is empty).
+
+// pop should be impossible to call on a zero-length vector
+
+class Vector[T, N = Unknown]
+  where N: 0.. | Unknown {
+    size: 0..,
+    capacity: 0..,
+    data: RawArray[T],
+}
+
+impl Vector[T, L]
+  where L subtype 0.. {
+    pub fn push(value: T) {
+        ...
+    } => [
+        L = L + 1;
+    ]
+
+    // Hopefully the compiler can figure out that length() will be constant here
+    // So that if vector.length() == 3 {} performs type narrowing
+    pub fn length() -> L {
+        this.size
+    }
+}
+
+impl Vector[T, L]
+  where L > 0 {
+    /// The index cannot be statically determined to be within the range,
+    /// as it may fall in or out of the range at runtime. So, it is nullable.
+    pub fn get[N](index: N) -> T?
+      where N intersects L
+        && N not subtype L {
+        ...
+    }
+
+    /// The index can be statically determined to be within range,
+    /// so it is not nullable
+    pub fn get(index: 0..(L - 1)) -> T {
+        ...
+    }
+
+    /// As the length is greater than zero,
+    /// pop will always return a value
+    pub fn pop() -> T {
+        ...
+    } => [
+        L = L - 1;
+    ]
+}
+
+impl Vector[T, N]
+  where N: Unknown {
+    /// As the length of the vector is not known, the return value is nullable.
+    pub fn get(index: 0..) -> T? {
+        ...
+    }
+
+    pub fn pop() -> T? {
+        ...
+    }
+
+    // This should allow it to type narrow from Unknown to I when used like
+    // if vector.length() == 3 {}
+    // I think.
+    pub fn length[I]() -> I {
+        this.size
+    } where I subtype 0.. => [
+        N = I;
+    ]
+}
