@@ -83,6 +83,7 @@ pub enum Instruction {
     PerformEffect(ConstRef),
     /// Makes a copy of the current VM state.
     /// TODO: figure out how to implement in compiler
+    /// Handle both closures and functions.
     HandleEffect(ConstRef, Register),
 
     // Threads
@@ -97,6 +98,11 @@ pub enum Instruction {
     Kill(),
     Pause(),
     Resume(),
+
+    // Arithmetic
+    // Not finalized. Will probably be replaced.
+    AddSI(Register, Register, Register),
+    AddUI(Register, Register, Register),
 }
 
 pub struct Code {
