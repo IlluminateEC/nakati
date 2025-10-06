@@ -1,0 +1,19 @@
+// Dunno the syntax I want yet
+effect GetDatabase() -> Database;
+
+pub fn doSomething() performs GetDatabase {
+    let database = perform GetDatabase;
+
+    database.query("SELECT 1;");
+}
+
+pub fn main() = {
+    let database = Database.new();
+
+    handle
+        GetDatabase(callback) => {
+            callback(database);
+        } 
+    in
+        doSomething();
+};

@@ -2,7 +2,6 @@ use std::{
     ops::{Index, IndexMut},
     ptr::NonNull,
     sync::Arc,
-    usize,
 };
 
 use crate::bytecode::{Code, ConstRef, Constant, Instruction, Module, Offset, REGISTERS, Register};
@@ -16,21 +15,20 @@ pub type VMResult<T> = Result<T, VMError>;
 
 // TODO: threads
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RegisterValue {
-    UnsignedInteger(u64),
-    SignedInteger(i64),
-    Empty,
-}
+// #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// enum RegisterValue {
+//     UnsignedInteger(u64),
+//     SignedInteger(i64),
+//     Empty,
+// }
 
-impl From<&Constant> for RegisterValue {
-    fn from(value: &Constant) -> Self {
-        match value {
-            Constant::UnsignedInteger(value) => Self::UnsignedInteger(*value),
-        }
-    }
-}
-
+// impl From<&Constant> for RegisterValue {
+//     fn from(value: &Constant) -> Self {
+//         match value {
+//             Constant::UnsignedInteger(value) => Self::UnsignedInteger(*value),
+//         }
+//     }
+// }
 #[derive(Clone, Debug)]
 // struct Registers([RegisterValue; REGISTERS]);
 struct Registers([u64; REGISTERS]);
@@ -57,10 +55,10 @@ impl IndexMut<Register> for Registers {
     }
 }
 
-impl Into<u64> for &Constant {
-    fn into(self) -> u64 {
-        match self {
-            Constant::UnsignedInteger(number) => *number,
+impl From<&Constant> for u64 {
+    fn from(value: &Constant) -> Self {
+        match value {
+            &Constant::UnsignedInteger(number) => number,
         }
     }
 }
@@ -125,7 +123,7 @@ impl Interpreter {
 
     #[inline]
     fn offset_to_isize(offset: Offset) -> i32 {
-        unsafe { i32::try_from(offset).unwrap_unchecked() }
+        i32::from(offset)
     }
 
     #[inline]
@@ -211,8 +209,7 @@ impl Interpreter {
 
         while let Some(instruction) = self
             .get_frame()
-            .map(|frame| frame.function.instructions.get(frame.ip as usize))
-            .flatten()
+            .and_then(|frame| frame.function.instructions.get(frame.ip as usize))
         {
             count += 1;
 

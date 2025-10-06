@@ -157,9 +157,10 @@ impl Scope {
         })
     }
 
-    pub fn get<'a>(&'a self, key: impl AsRef<str>) -> Option<&'a Value> {
+    pub fn get(&self, key: impl AsRef<str>) -> Option<&Value> {
         if let Some(value) = self.pairs.read().unwrap().get(key.as_ref()) {
-            return Some(unsafe { std::mem::transmute(value) });
+            // The scope will not be deallocated while this reference exists.
+            return Some(unsafe { std::mem::transmute::<&Value, &'static Value>(value) });
         }
 
         if let Some(parent) = &self.parent {

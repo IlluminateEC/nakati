@@ -148,7 +148,7 @@ fn print_indented(content: impl Display, depth: usize) {
 
 #[inline]
 fn print_labeled(label: &str, content: impl Debug, depth: usize) {
-    print_indented(&format!("{}: {:?}", label, content), depth);
+    print_indented(format!("{}: {:?}", label, content), depth);
 }
 
 #[inline]

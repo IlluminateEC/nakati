@@ -12,7 +12,7 @@ use crate::{
     source::Source,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ImportPool {
     scopes: Arc<RwLock<HashMap<String, Arc<Scope>>>>,
 }
@@ -253,9 +253,7 @@ impl ModuleLabel {
         let mut parser = Parser::new(lexer);
         let ast = parser.parse()?;
 
-        let scope = Interpreter::evaluate_module(ast, self.clone(), pool);
-
-        scope
+        Interpreter::evaluate_module(ast, self.clone(), pool)
     }
 }
 

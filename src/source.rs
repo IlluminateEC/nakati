@@ -14,11 +14,12 @@ impl SourceId {
         // TODO: remove expect and return an Option
 
         SOURCES
-            .get(self.clone())
+            .get(*self)
             .expect("Source ID should exist, ideally.")
     }
 }
 
+#[derive(Default)]
 pub struct Sources {
     sources: RwLock<LinkedList<Source>>,
     paths: RwLock<Vec<String>>,
@@ -81,7 +82,7 @@ impl Source {
 
         Self::new(
             path.as_ref().to_str().unwrap(),
-            content.expect(&format!("file {:?} to exist", path.as_ref())),
+            content.unwrap_or_else(|_| panic!("file {:?} to exist", path.as_ref())),
         )
     }
 
